@@ -1,0 +1,24 @@
+# Generated data. Never commit it. Each user builds the database with the ETL.
+data/
+*.duckdb
+*.duckdb.wal
+*.duckdb.tmp
+*.parquet
+*.csv.gz
+*.zip
+*.part
+
+# Local configuration and secrets
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
