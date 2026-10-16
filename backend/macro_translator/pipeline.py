@@ -261,9 +261,9 @@ def seleccionar(
 
 
 _EXACTA = (
-    (re.compile(r"\bexactamente\b", re.IGNORECASE), "aproximadamente"),
+    (re.compile(r"\bexact[ao]mente\b", re.IGNORECASE), "aproximadamente"),
     (re.compile(r"\bexact([ao]s?)\b", re.IGNORECASE), r"aproximad\1"),
-    (re.compile(r"\bidéntic([ao]s?)\b", re.IGNORECASE), r"parecid\1"),
+    (re.compile(r"\bid[eé]ntic([ao]s?)\b", re.IGNORECASE), r"parecid\1"),
 )
 
 
@@ -333,7 +333,7 @@ def construir_fila(ing: Ingrediente, eleccion: Eleccion | None) -> Fila:
             )
         # What the database row fixes and the user did not say goes next to the table.
         propios = el.supuestos + atributos.supuestos_del_candidato(
-            ing.nombre_es, cand, el.supuestos
+            ing.nombre_es, cand, el.supuestos, ing.marca
         )
         supuestos.extend(propios)
         motivo = limpiar_motivo(el.motivo, propios)

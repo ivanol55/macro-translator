@@ -65,8 +65,47 @@ def test_cooking_method(nombre_es, usda, esperado):
     assert out == ([esperado] if esperado else [])
 
 
-def test_off_rows_are_not_checked():
-    assert supuestos_del_candidato("Pechuga a la plancha", cand("Pollo asado", "OFF"), []) == []
+def test_off_rows_are_checked_for_the_extra_table():
+    # The extra rules apply to OFF too: the dairy variant is fixed by the row.
+    assert supuestos_del_candidato("Leche", cand("Leche entera", "OFF"), []) == [
+        "La base de datos usa la versión entera"
+    ]
+    assert supuestos_del_candidato("Leche entera", cand("Leche entera", "OFF"), []) == []
+
+
+def test_cocoa_percentage_is_added():
+    cands = cand("Chocolate, dark, 70-85% cacao solids")
+    assert supuestos_del_candidato("Chocolate negro", cands, []) == [
+        "La base de datos usa chocolate con 70-85 % de cacao"
+    ]
+    assert supuestos_del_candidato("Chocolate negro 85 %", cands, []) == []
+
+
+def test_animal_part_is_added():
+    pechuga = "Chicken, broiler or fryers, breast, meat only, cooked, grilled"
+    out = supuestos_del_candidato("Pollo a la plancha", cand(pechuga), [])
+    assert "La base de datos usa la parte «pechuga»" in out
+    assert not any(
+        "parte" in s
+        for s in supuestos_del_candidato("Pechuga de pollo a la plancha", cand(pechuga), [])
+    )
+
+
+def test_sugar_variant_is_added():
+    azucarado = cand("Yogurt, Greek, sweetened", "OFF")
+    assert supuestos_del_candidato("Yogur griego", azucarado, []) == [
+        "La base de datos usa la versión con azúcar"
+    ]
+
+
+def test_brand_is_declared_when_it_differs():
+    off = cand("Tomate frito", "OFF")
+    off = off.model_copy(update={"marca": "Hacendado"})
+    assert supuestos_del_candidato("Tomate frito", off, [], "Mercadona") == [
+        "La base de datos es de la marca Hacendado, no Mercadona"
+    ]
+    assert supuestos_del_candidato("Tomate frito", off, [], "Hacendado") == []
+    assert supuestos_del_candidato("Tomate frito", off, [], None) == []
 
 
 def test_skin():
