@@ -10,12 +10,18 @@ from __future__ import annotations
 from decimal import ROUND_HALF_UP, Decimal
 
 from .models import IngredienteLLM, Macros
+from .unidades import (
+    CUCHARADAS_G,
+    DENSIDAD_ACEITE_G_ML,
+    DENSIDAD_DEFECTO_G_ML,
+    SPOON_LABEL,
+    SPOON_PLURAL,
+)
 
-OIL_DENSITY_G_PER_ML = 0.92
-DEFAULT_DENSITY_G_PER_ML = 1.0
-SPOON_GRAMS = {"cucharadita": 5.0, "cucharada": 13.0, "chorrito": 10.0}
-SPOON_LABEL = {"cucharadita": "cucharadita", "cucharada": "cucharada", "chorrito": "chorrito"}
-SPOON_PLURAL = {"cucharadita": "cucharaditas", "cucharada": "cucharadas", "chorrito": "chorritos"}
+# Kept as aliases: the conversion table lives in `unidades.py` (one source).
+OIL_DENSITY_G_PER_ML = DENSIDAD_ACEITE_G_ML
+DEFAULT_DENSITY_G_PER_ML = DENSIDAD_DEFECTO_G_ML
+SPOON_GRAMS = CUCHARADAS_G
 
 COHERENCE_TOLERANCE = 0.20
 COHERENCE_MIN_ABS_KCAL = 5.0

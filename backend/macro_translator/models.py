@@ -77,6 +77,10 @@ class Ingrediente(BaseModel):
     estado: Estado
     valores_usuario_100g: ValoresEtiqueta | None
     supuestos: list[str]
+    # False when the quantity cannot be rebuilt from the text: the row does not count.
+    cantidad_valida: bool = True
+    # Deterministic warnings for the row (label values dropped, quantity corrected).
+    avisos: list[str] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #

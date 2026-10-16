@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import atributos, calc
+from . import atributos, calc, etiqueta, unidades
 from .db import FoodDB
 from .llm import LLMClient
 from .models import (
@@ -83,22 +83,45 @@ def corregir_veces(ing: IngredienteLLM, texto: str) -> tuple[IngredienteLLM, str
 
 def normalizar(ing: IngredienteLLM, texto: str = "") -> Ingrediente:
     ing, nota = corregir_veces(ing, texto)
+    rec = unidades.reconstruible(ing, texto)
+    avisos: list[str] = []
+    if rec.cantidad is not None:  # the text fixes the quantity: use it
+        ing = ing.model_copy(update={"cantidad": rec.cantidad})
+    if rec.motivo:
+        avisos.append(rec.motivo)
+
+    # Label values win over the database, but only when the code can check them.
+    valores, aviso_etiqueta = etiqueta.validar(ing.valores_usuario_100g, texto, ing.nombre_es)
+    if aviso_etiqueta:
+        avisos.append(aviso_etiqueta)
+
     gramos, notas = calc.a_gramos(ing)
     if nota:
         notas.insert(0, nota)
+    if not rec.ok:
+        avisos.append("Cantidad no válida: no coincide con el texto; no se incluye en el total.")
     return Ingrediente(
         nombre_es=ing.nombre_es.strip(),
         nombre_en=ing.nombre_en.strip(),
         marca=ing.marca.strip() if ing.marca else None,
         gramos=gramos,
         estado=ing.estado,
-        valores_usuario_100g=ing.valores_usuario_100g,
+        valores_usuario_100g=valores,
         supuestos=[s.strip() for s in ing.supuestos if s.strip()] + notas,
+        cantidad_valida=rec.ok,
+        avisos=avisos,
     )
 
 
+def _como_dato(texto: str) -> str:
+    """Wrap the user text so the model reads it as data, not as instructions."""
+    return f"<texto_usuario>\n{texto}\n</texto_usuario>"
+
+
 def interpretar(texto: str, llm: LLMClient, prompts: Prompts) -> list[Ingrediente]:
-    res = llm.chat_json(prompts.parse, texto, Interpretacion, "interpretacion", prompts.retry)
+    res = llm.chat_json(
+        prompts.parse, _como_dato(texto), Interpretacion, "interpretacion", prompts.retry
+    )
     return [normalizar(i, texto) for i in res.ingredientes]
 
 
@@ -106,6 +129,8 @@ def interpretar(texto: str, llm: LLMClient, prompts: Prompts) -> list[Ingredient
 # Step 2: search
 # --------------------------------------------------------------------------- #
 def necesita_bd(ing: Ingrediente) -> bool:
+    if not ing.cantidad_valida:
+        return False
     return ing.valores_usuario_100g is None or not ing.valores_usuario_100g.completos()
 
 
@@ -267,12 +292,27 @@ def _origen(c: Candidato) -> Origen:
 
 def construir_fila(ing: Ingrediente, eleccion: Eleccion | None) -> Fila:
     supuestos = list(ing.supuestos)
+    if not ing.cantidad_valida:
+        return Fila(
+            ingrediente=ing.nombre_es,
+            gramos=ing.gramos,
+            encontrado=False,
+            valores=None,
+            redondeado=None,
+            origen=None,
+            motivo=None,
+            aviso=" ".join(ing.avisos) or "Cantidad no válida: no se incluye en el total.",
+            supuestos=supuestos,
+        )
+
     user = ing.valores_usuario_100g
     motivo = None
     sensibilidad = None
     alternativa = None
 
-    if user is not None and user.completos():
+    # A row takes its four values from ONE source. The label values (checked in
+    # `etiqueta.validar`) are complete, so they never mix with the database.
+    if user is not None:
         v100 = Macros(kcal=user.kcal, prot=user.prot, carbs=user.carbs, grasas=user.grasas)
         origen = Origen(tipo="Usuario", nombre="Valores de la etiqueta escritos por el usuario")
     else:
@@ -288,11 +328,10 @@ def construir_fila(ing: Ingrediente, eleccion: Eleccion | None) -> Fila:
                 redondeado=None,
                 origen=None,
                 motivo=motivo or None,
-                aviso="No encontrado: no se estima.",
+                aviso=" ".join(ing.avisos) or None,
                 supuestos=supuestos,
             )
         # What the database row fixes and the user did not say goes next to the table.
-        # The code adds the fat % and the cooking method if the LLM forgot them.
         propios = el.supuestos + atributos.supuestos_del_candidato(
             ing.nombre_es, cand, el.supuestos
         )
@@ -303,19 +342,18 @@ def construir_fila(ing: Ingrediente, eleccion: Eleccion | None) -> Fila:
         alt, variante = el.alternativa, el.alternativa_texto
         if alt is None:  # the LLM gave none: try the same food with another fat %
             alt, variante = atributos.alternativa_por_grasa(cand, el.opciones) or (None, None)
-        if alt is not None and (user is None or user.kcal is None):
+        if alt is not None:
             sensibilidad = calc.aviso_sensibilidad(
                 cand.kcal, alt.kcal, ing.gramos, variante or alt.nombre
             )
             if sensibilidad:
                 alternativa = _origen(alt)
-        if user is not None:  # some label values: they win over the database
-            v100 = Macros(**(v100.model_dump() | user.model_dump(exclude_none=True)))
-            faltan = [k for k, v in user.model_dump().items() if v is None]
-            origen = origen.model_copy(update={"tipo": "Usuario", "complemento": cand.fuente})
-            supuestos.append(f"Etiqueta incompleta: {', '.join(faltan)} de {cand.fuente}")
 
     valores = calc.escalar(v100, ing.gramos)
+    avisos = list(ing.avisos)
+    aviso_coherencia = calc.aviso_coherencia(v100)
+    if aviso_coherencia:
+        avisos.append(aviso_coherencia)
     return Fila(
         ingrediente=ing.nombre_es,
         gramos=ing.gramos,
@@ -324,7 +362,7 @@ def construir_fila(ing: Ingrediente, eleccion: Eleccion | None) -> Fila:
         redondeado=calc.redondear_macros(valores),
         origen=origen,
         motivo=motivo or None,
-        aviso=calc.aviso_coherencia(v100),
+        aviso=" ".join(avisos) or None,
         sensibilidad=sensibilidad,
         alternativa=alternativa,
         supuestos=supuestos,
@@ -337,7 +375,9 @@ def totalizar(filas: list[Fila]) -> Resultado:
     avisos = []
     faltan = [f.ingrediente for f in filas if not f.encontrado]
     if faltan:
-        avisos.append("El total no incluye: " + ", ".join(faltan) + " (no encontrado).")
+        avisos.append(
+            "El total no incluye: " + ", ".join(faltan) + " (no encontrado o cantidad no válida)."
+        )
     if not filas:
         avisos.append("No hay alimentos en el texto.")
     return Resultado(
