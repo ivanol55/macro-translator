@@ -70,6 +70,10 @@ USDA_FOODS = [
     ("sr_legacy", "Yogurt, Greek, plain, lowfat"),
     ("sr_legacy", "Candies, hard"),
     ("sr_legacy", "Kielbasa, fully cooked, grilled"),
+    # Same food, very different kcal: the sensitivity warning
+    ("sr_legacy", "Beef, ground, 70% lean meat / 30% fat, raw"),
+    ("sr_legacy", "Beef, ground, 80% lean meat / 20% fat, raw"),
+    ("sr_legacy", "Beef, ground, 95% lean meat / 5% fat, raw"),
     ("sr_legacy", "Alcoholic beverage, beer, regular, all"),  # incoherent without alcohol
     ("foundation", "Eggs, Grade A, Large, egg whole"),
     ("foundation", "Eggplant, raw"),  # energy only as Atwater (2047/2048)

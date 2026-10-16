@@ -52,6 +52,15 @@ text ──► 1. Interpret (LLM call 1) ──► ingredients, quantity as writ
 - "huevos, 2, 130g" is 130 g in total. Only a marker ("2×130 g", "cada uno", "de 130 g") makes
   a weight per piece. The backend checks this rule in code, because small models sometimes read
   "2, 130g" as 2 × 130 g.
+- **Assumptions of the choice.** When the chosen food fixes something that you did not write
+  (fat percentage, skin, cooking method, variant), the app shows it in "Supuestos" under the
+  table. The reason for the choice then never says "exact". The LLM writes these assumptions,
+  and the code adds the fat percentage, the skin and the cooking method when the LLM forgets them.
+- **Sensitivity warning.** When another plausible variant of the same food differs by more than
+  25 % in kcal (and by 10 kcal or more), the row shows it: "≈ Si es picada magra (95 %): unas
+  230 kcal menos". The LLM names the variant, and the code calculates the difference. For fat
+  variants (ground meat), the code finds the variant itself when the LLM gives none. The warning
+  never changes the total.
 - The LLM output is always validated with Pydantic. On an error the backend asks again (max
   2 times) and gives the error to the model.
 - No native tool calling. The backend uses `response_format` (JSON schema or JSON object)

@@ -11,7 +11,7 @@ Devuelve SOLO un objeto JSON, sin texto antes ni después:
 Cada ingrediente tiene estos campos:
 
 - "nombre_es": nombre corto del alimento en español, con mayúscula inicial. Incluye el estado si el usuario lo dice ("Huevos cocidos", "Pechuga de pollo a la plancha"). Sin cantidad ni marca.
-- "nombre_en": nombre en inglés para buscar en la base de datos USDA, con palabras simples ("cuttlefish", "olive oil", "egg whole hard-boiled", "chicken breast").
+- "nombre_en": nombre en inglés para buscar en la base de datos USDA, con palabras simples ("cuttlefish", "olive oil", "egg whole hard-boiled", "chicken breast grilled"). Si el usuario dice el modo de cocción, ponlo en inglés: a la plancha = grilled, al horno = roasted, frito = fried, cocido o hervido = boiled, guisado = stewed, al vapor = steamed.
 - "marca": la marca si el usuario la escribe ("Hacendado"). Si no, null.
 - "cantidad": número. La cantidad tal como aparece en el texto.
 - "unidad": una de "g", "kg", "ml", "l", "cucharadita", "cucharada", "chorrito".
@@ -52,7 +52,7 @@ Texto: "yogur griego Hacendado 125 g, un plátano y 2 tostadas de pan integral d
 Texto: "salmón a la plancha, 2 lomos, 300g, 10 ml de aceite de girasol y atún Calvo, una lata de 52 g, en la etiqueta pone 214 kcal, 26 g de proteína, 0 de hidratos y 12 de grasa por 100 g"
 
 {"ingredientes": [
-  {"nombre_es": "Salmón a la plancha", "nombre_en": "salmon cooked", "marca": null, "cantidad": 300, "unidad": "g", "veces": 1, "es_aceite": false, "estado": "cocido", "valores_usuario_100g": null, "supuestos": ["300 g es el total de los 2 lomos"]},
+  {"nombre_es": "Salmón a la plancha", "nombre_en": "salmon grilled", "marca": null, "cantidad": 300, "unidad": "g", "veces": 1, "es_aceite": false, "estado": "cocido", "valores_usuario_100g": null, "supuestos": ["300 g es el total de los 2 lomos"]},
   {"nombre_es": "Aceite de girasol", "nombre_en": "sunflower oil", "marca": null, "cantidad": 10, "unidad": "ml", "veces": 1, "es_aceite": true, "estado": "n/a", "valores_usuario_100g": null, "supuestos": []},
   {"nombre_es": "Atún", "nombre_en": "tuna canned", "marca": "Calvo", "cantidad": 52, "unidad": "g", "veces": 1, "es_aceite": false, "estado": "n/a", "valores_usuario_100g": {"kcal": 214, "prot": 26, "carbs": 0, "grasas": 12}, "supuestos": ["Una lata de 52 g", "Valores de la etiqueta por 100 g"]}
 ]}

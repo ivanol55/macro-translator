@@ -147,6 +147,13 @@ th:last-child, td:last-child { padding-right: 10px; }
 td.ingrediente { overflow-wrap: anywhere; }
 tr.no-encontrado td { color: var(--muted); font-style: italic; }
 tr.con-aviso td.ingrediente::after { content: " ⚠"; color: var(--warn-text); font-style: normal; }
+td .sensibilidad {
+  margin-top: 3px;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  color: var(--warn-text);
+}
+td .sensibilidad::before { content: "≈ "; }
 tfoot td {
   font-weight: 700;
   background: var(--total-bg);

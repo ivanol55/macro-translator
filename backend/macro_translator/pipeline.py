@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import calc
+from . import atributos, calc
 from .db import FoodDB
 from .llm import LLMClient
 from .models import (
@@ -150,26 +150,37 @@ def texto_seleccion(ingredientes: list[Ingrediente], candidatos: dict[int, list[
 
 def esquema_seleccion(candidatos: dict[int, list[Candidato]]) -> dict:
     claves = sorted({c.clave for cs in candidatos.values() for c in cs})
+    clave_o_null = {"anyOf": [{"type": "string", "enum": claves}, {"type": "null"}]}
+    props = {
+        "ingrediente_idx": {"type": "integer", "enum": sorted(candidatos)},
+        "motivo": {"type": "string"},
+        "candidato_id": clave_o_null,
+        "supuestos": {"type": "array", "items": {"type": "string"}, "maxItems": 5},
+        "alternativa_id": clave_o_null,
+        "alternativa": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+    }
     return {
         "type": "object",
         "properties": {
             "selecciones": {
                 "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "ingrediente_idx": {"type": "integer", "enum": sorted(candidatos)},
-                        "motivo": {"type": "string"},
-                        "candidato_id": {
-                            "anyOf": [{"type": "string", "enum": claves}, {"type": "null"}]
-                        },
-                    },
-                    "required": ["ingrediente_idx", "motivo", "candidato_id"],
-                },
+                "items": {"type": "object", "properties": props, "required": list(props)},
             }
         },
         "required": ["selecciones"],
     }
+
+
+@dataclass
+class Eleccion:
+    """What the LLM chose for one ingredient, with the candidates resolved."""
+
+    candidato: Candidato | None
+    motivo: str
+    supuestos: list[str] = field(default_factory=list)
+    alternativa: Candidato | None = None
+    alternativa_texto: str | None = None
+    opciones: list[Candidato] = field(default_factory=list)  # the candidates of the round
 
 
 def _seleccionar_ronda(
@@ -177,7 +188,7 @@ def _seleccionar_ronda(
     candidatos: dict[int, list[Candidato]],
     llm: LLMClient,
     prompts: Prompts,
-) -> dict[int, tuple[Candidato | None, str]]:
+) -> dict[int, Eleccion]:
     res = llm.chat_json(
         prompts.select,
         texto_seleccion(ingredientes, candidatos),
@@ -187,10 +198,18 @@ def _seleccionar_ronda(
         schema=esquema_seleccion(candidatos),
         context={"candidatos": candidatos},
     )
-    out: dict[int, tuple[Candidato | None, str]] = {}
+    out: dict[int, Eleccion] = {}
     for s in res.selecciones:
-        cand = next((c for c in candidatos[s.ingrediente_idx] if c.clave == s.candidato_id), None)
-        out[s.ingrediente_idx] = (cand, s.motivo.strip())
+        por_clave = {c.clave: c for c in candidatos[s.ingrediente_idx]}
+        cand = por_clave.get(s.candidato_id) if s.candidato_id else None
+        out[s.ingrediente_idx] = Eleccion(
+            candidato=cand,
+            motivo=s.motivo.strip(),
+            supuestos=s.supuestos if cand else [],
+            alternativa=por_clave.get(s.alternativa_id) if cand and s.alternativa_id else None,
+            alternativa_texto=s.alternativa,
+            opciones=candidatos[s.ingrediente_idx],
+        )
     return out
 
 
@@ -199,21 +218,37 @@ def seleccionar(
     candidatos: dict[int, tuple[list[Candidato], list[Candidato]]],
     llm: LLMClient,
     prompts: Prompts,
-) -> dict[int, tuple[Candidato | None, str]]:
+) -> dict[int, Eleccion]:
     """Round 1: the preferred source. Round 2: the other source, only for null answers."""
     ronda1 = {i: pref or alt for i, (pref, alt) in candidatos.items() if pref or alt}
     out = _seleccionar_ronda(ingredientes, ronda1, llm, prompts) if ronda1 else {}
     ronda2 = {
         i: alt
         for i, (pref, alt) in candidatos.items()
-        if pref and alt and i in out and out[i][0] is None
+        if pref and alt and i in out and out[i].candidato is None
     }
     if ronda2:
-        for i, (cand, motivo) in _seleccionar_ronda(ingredientes, ronda2, llm, prompts).items():
-            if cand is None and motivo != out[i][1]:
-                motivo = f"{out[i][1]} / {motivo}".strip(" /")
-            out[i] = (cand, motivo)
+        for i, el in _seleccionar_ronda(ingredientes, ronda2, llm, prompts).items():
+            if el.candidato is None and el.motivo != out[i].motivo:
+                el.motivo = f"{out[i].motivo} / {el.motivo}".strip(" /")
+            out[i] = el
     return out
+
+
+_EXACTA = (
+    (re.compile(r"\bexactamente\b", re.IGNORECASE), "aproximadamente"),
+    (re.compile(r"\bexact([ao]s?)\b", re.IGNORECASE), r"aproximad\1"),
+    (re.compile(r"\bidéntic([ao]s?)\b", re.IGNORECASE), r"parecid\1"),
+)
+
+
+def limpiar_motivo(motivo: str, supuestos: list[str]) -> str:
+    """A choice with assumptions is not an exact match. The reason must not say so."""
+    if not supuestos:
+        return motivo
+    for patron, cambio in _EXACTA:
+        motivo = patron.sub(cambio, motivo)
+    return motivo
 
 
 # --------------------------------------------------------------------------- #
@@ -230,16 +265,20 @@ def _origen(c: Candidato) -> Origen:
     )
 
 
-def construir_fila(ing: Ingrediente, eleccion: tuple[Candidato | None, str] | None) -> Fila:
+def construir_fila(ing: Ingrediente, eleccion: Eleccion | None) -> Fila:
     supuestos = list(ing.supuestos)
     user = ing.valores_usuario_100g
     motivo = None
+    sensibilidad = None
+    alternativa = None
 
     if user is not None and user.completos():
         v100 = Macros(kcal=user.kcal, prot=user.prot, carbs=user.carbs, grasas=user.grasas)
         origen = Origen(tipo="Usuario", nombre="Valores de la etiqueta escritos por el usuario")
     else:
-        cand, motivo = eleccion if eleccion else (None, "sin candidatos en la base de datos")
+        el = eleccion or Eleccion(candidato=None, motivo="sin candidatos en la base de datos")
+        cand = el.candidato
+        motivo = limpiar_motivo(el.motivo, el.supuestos)
         if cand is None:
             return Fila(
                 ingrediente=ing.nombre_es,
@@ -252,8 +291,24 @@ def construir_fila(ing: Ingrediente, eleccion: tuple[Candidato | None, str] | No
                 aviso="No encontrado: no se estima.",
                 supuestos=supuestos,
             )
+        # What the database row fixes and the user did not say goes next to the table.
+        # The code adds the fat % and the cooking method if the LLM forgot them.
+        propios = el.supuestos + atributos.supuestos_del_candidato(
+            ing.nombre_es, cand, el.supuestos
+        )
+        supuestos.extend(propios)
+        motivo = limpiar_motivo(el.motivo, propios)
         v100 = Macros(kcal=cand.kcal, prot=cand.prot, carbs=cand.carbs, grasas=cand.grasas)
         origen = _origen(cand)
+        alt, variante = el.alternativa, el.alternativa_texto
+        if alt is None:  # the LLM gave none: try the same food with another fat %
+            alt, variante = atributos.alternativa_por_grasa(cand, el.opciones) or (None, None)
+        if alt is not None and (user is None or user.kcal is None):
+            sensibilidad = calc.aviso_sensibilidad(
+                cand.kcal, alt.kcal, ing.gramos, variante or alt.nombre
+            )
+            if sensibilidad:
+                alternativa = _origen(alt)
         if user is not None:  # some label values: they win over the database
             v100 = Macros(**(v100.model_dump() | user.model_dump(exclude_none=True)))
             faltan = [k for k, v in user.model_dump().items() if v is None]
@@ -270,6 +325,8 @@ def construir_fila(ing: Ingrediente, eleccion: tuple[Candidato | None, str] | No
         origen=origen,
         motivo=motivo or None,
         aviso=calc.aviso_coherencia(v100),
+        sensibilidad=sensibilidad,
+        alternativa=alternativa,
         supuestos=supuestos,
     )
 

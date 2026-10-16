@@ -52,6 +52,8 @@ def create_app(
             return JSONResponse({"detail": "Petición demasiado grande."}, status_code=413)
         response = await call_next(request)
         response.headers.update(SECURITY_HEADERS)
+        # Check the ETag on each load: after an update, browsers get the new page and JS.
+        response.headers.setdefault("Cache-Control", "no-cache")
         return response
 
     @app.get("/api/health")

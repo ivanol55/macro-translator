@@ -102,13 +102,30 @@ class Seleccion(BaseModel):
     ingrediente_idx: int
     candidato_id: str | None
     motivo: str = Field(default="", max_length=400)
+    # What the chosen candidate fixes and the user did not say (fat %, variant, cut).
+    supuestos: list[str] = Field(default_factory=list, max_length=5)
+    # Another candidate that can also be the food, because the text does not say the variant.
+    alternativa_id: str | None = None
+    alternativa: str | None = Field(default=None, max_length=80)  # "picada magra"
 
-    @field_validator("candidato_id", mode="before")
+    @field_validator("candidato_id", "alternativa_id", mode="before")
     @classmethod
     def _null(cls, v: object) -> object:
         if isinstance(v, str) and v.strip().lower() in {"", "null", "none", "ninguno"}:
             return None
         return v.strip().upper() if isinstance(v, str) else v
+
+    @field_validator("supuestos", mode="after")
+    @classmethod
+    def _sin_vacios(cls, v: list[str]) -> list[str]:
+        return [x.strip() for x in v if x and x.strip()]
+
+    @field_validator("alternativa", mode="before")
+    @classmethod
+    def _alternativa_vacia(cls, v: object) -> object:
+        if isinstance(v, str) and v.strip().lower() in {"", "null", "none", "ninguna"}:
+            return None
+        return v
 
 
 class Selecciones(BaseModel):
@@ -137,6 +154,14 @@ class Selecciones(BaseModel):
                     f"candidato_id {s.candidato_id!r} no es un candidato del ingrediente "
                     f"{s.ingrediente_idx}. Valores permitidos: {sorted(claves)} o null"
                 )
+            # A wrong alternative is not worth a retry: drop it.
+            if (
+                s.alternativa_id not in claves
+                or s.alternativa_id == s.candidato_id
+                or s.candidato_id is None
+            ):
+                s.alternativa_id = None
+                s.alternativa = None
         faltan = sorted(set(candidatos) - vistos)
         if faltan:
             raise ValueError(f"faltan selecciones para ingrediente_idx {faltan}")
@@ -175,6 +200,9 @@ class Fila(BaseModel):
     origen: Origen | None
     motivo: str | None = None
     aviso: str | None = None
+    # The kcal change if the food is another plausible variant ("si es picada magra...").
+    sensibilidad: str | None = None
+    alternativa: Origen | None = None  # the variant behind the sensitivity warning
     supuestos: list[str] = Field(default_factory=list)
 
 

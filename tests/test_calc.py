@@ -72,3 +72,18 @@ def test_format_for_notes():
     assert calc.fmt(9.2) == "9,2"
     assert calc.fmt(10.0) == "10"
     assert calc.fmt(0.92, 2) == "0,92"
+
+
+def test_sensitivity_warning():
+    # 200 g of 80 % lean (254 kcal/100 g) vs 95 % lean (137): 234 kcal less, 46 %.
+    assert calc.aviso_sensibilidad(254, 137, 200, "picada magra") == (
+        "Si es picada magra: unas 230 kcal menos"
+    )
+    assert calc.aviso_sensibilidad(100, 130, 100, "con piel") == "Si es con piel: unas 30 kcal más"
+
+
+def test_no_sensitivity_warning_for_small_changes():
+    assert calc.aviso_sensibilidad(100, 120, 100, "x") is None  # 20 %: not more than 25 %
+    assert calc.aviso_sensibilidad(100, 125, 100, "x") is None  # exactly 25 %
+    assert calc.aviso_sensibilidad(100, 150, 15, "x") is None  # 50 %, but only 7.5 kcal
+    assert calc.aviso_sensibilidad(0, 40, 100, "x") == "Si es x: unas 40 kcal más"

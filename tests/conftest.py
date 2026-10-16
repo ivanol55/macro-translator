@@ -113,7 +113,9 @@ class FakeLLM:
 
     interpretacion: the JSON that the first call returns.
     elegir: for each nombre_es, a text that the chosen candidate name contains,
-            or None for "no candidate is the same food".
+            or None for "no candidate is the same food". A dict gives more:
+            {"elegir", "supuestos", "alternativa", "alternativa_texto", "motivo",
+             "alternativa_id"} (alternativa is a text in the alternative's name).
     """
 
     def __init__(self, interpretacion: dict, elegir: dict[str, str | None] | None = None):
@@ -131,15 +133,32 @@ class FakeLLM:
         for block in user.split("### Ingrediente ")[1:]:
             idx = int(block.split(":", 1)[0])
             nombre = re.match(r"\d+: (.*?) \(en inglés", block).group(1)
-            buscado = self.elegir.get(nombre)
-            clave = None
-            if buscado:
-                for line in block.splitlines():
-                    if line.startswith("- ") and buscado.lower() in line.lower():
-                        clave = line[2:].split(" |", 1)[0]
-                        break
-            selecciones.append({"ingrediente_idx": idx, "motivo": "fake", "candidato_id": clave})
+            regla = self.elegir.get(nombre)
+            if not isinstance(regla, dict):
+                regla = {"elegir": regla}
+            clave = self._clave(block, regla.get("elegir"))
+            alt = self._clave(block, regla.get("alternativa")) if clave else None
+            selecciones.append(
+                {
+                    "ingrediente_idx": idx,
+                    "motivo": regla.get("motivo", "fake"),
+                    "candidato_id": clave,
+                    "supuestos": regla.get("supuestos", []) if clave else [],
+                    "alternativa_id": regla.get("alternativa_id", alt),
+                    "alternativa": regla.get("alternativa_texto") if alt else None,
+                }
+            )
         return {"selecciones": selecciones}
+
+    @staticmethod
+    def _clave(block: str, buscado: str | None) -> str | None:
+        """Key of the first candidate line that contains the text."""
+        if not buscado:
+            return None
+        for line in block.splitlines():
+            if line.startswith("- ") and buscado.lower() in line.lower():
+                return line[2:].split(" |", 1)[0]
+        return None
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)

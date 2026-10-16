@@ -86,6 +86,22 @@ def aviso_coherencia(m: Macros) -> str | None:
     )
 
 
+SENSITIVITY_REL = 0.25  # warn when the other plausible variant differs by more than 25 %
+SENSITIVITY_MIN_KCAL = 10.0  # ... and by at least 10 kcal for the amount eaten
+
+
+def aviso_sensibilidad(
+    kcal_100g: float, alt_kcal_100g: float, gramos: float, variante: str
+) -> str | None:
+    """'Si es picada magra: unas 230 kcal menos' when the variant changes the kcal a lot."""
+    diff = (alt_kcal_100g - kcal_100g) * gramos / 100
+    rel = abs(alt_kcal_100g - kcal_100g) / kcal_100g if kcal_100g > 0 else float("inf")
+    if rel <= SENSITIVITY_REL or abs(diff) < SENSITIVITY_MIN_KCAL:
+        return None
+    unas = max(10, int(redondear(abs(diff) / 10, 0)) * 10)
+    return f"Si es {variante.strip()}: unas {unas} kcal {'menos' if diff < 0 else 'más'}"
+
+
 def sumar(filas: list[Macros]) -> Macros:
     return Macros(
         kcal=sum(m.kcal for m in filas),

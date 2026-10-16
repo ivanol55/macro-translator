@@ -14,11 +14,22 @@ Recibes una lista de ingredientes. Cada ingrediente tiene candidatos con:
 6. Si el usuario no dice un sabor ni una variante, el ingrediente es la versión natural o básica. Un candidato natural ("natural", "plain", o solo el nombre del producto, como "GRIEGO" para "Yogur griego") es el mismo alimento. Los candidatos con sabor (stracciatella, fresa, cacao) no lo son.
 7. No elijas por los números. Los valores por 100 g solo sirven para descartar candidatos absurdos (por ejemplo, un aceite con 300 kcal).
 
+## Supuestos de la elección
+
+8. Compara el candidato elegido con el texto del ingrediente. Si el candidato fija algo que el usuario NO dijo, escríbelo en "supuestos", una frase corta por cada cosa, en español: porcentaje de grasa ("carne picada 80 % magra, 20 % grasa"), corte o parte ("pechuga sin piel"), modo de cocción ("asada al horno, no a la plancha"), variante ("yogur natural, sin azúcar"), ingredientes añadidos ("con verduras"). Si el candidato no fija nada nuevo, "supuestos" es [].
+9. Si "supuestos" no está vacío, el "motivo" NO dice "exacta", "exacto" ni "exactamente".
+
+## Alternativa
+
+10. Si otro candidato también puede ser el ingrediente, porque el texto no dice la variante, pon su clave en "alternativa_id" y una descripción corta de esa variante en "alternativa" ("picada magra", "pechuga con piel", "yogur azucarado"). Elige la variante más probable después de la elegida. No calcules diferencias: el programa las calcula.
+11. Si no hay otra variante del mismo alimento, "alternativa_id" y "alternativa" son null. Un alimento distinto nunca es una alternativa.
+
 ## Formato de salida
 
-Devuelve SOLO un objeto JSON, sin texto antes ni después, con una selección por ingrediente. Escribe el "motivo" en español:
+Devuelve SOLO un objeto JSON, sin texto antes ni después, con una selección por ingrediente. Escribe "motivo", "supuestos" y "alternativa" en español:
 
 {"selecciones": [
-  {"ingrediente_idx": 0, "motivo": "frase corta", "candidato_id": "U1"},
-  {"ingrediente_idx": 1, "motivo": "ningún candidato es el mismo alimento", "candidato_id": null}
+  {"ingrediente_idx": 0, "motivo": "carne picada de ternera cruda; el texto no dice el porcentaje de grasa", "candidato_id": "U3", "supuestos": ["carne picada 80 % magra, 20 % grasa"], "alternativa_id": "U2", "alternativa": "picada magra (95 %)"},
+  {"ingrediente_idx": 1, "motivo": "es el mismo alimento", "candidato_id": "U1", "supuestos": [], "alternativa_id": null, "alternativa": null},
+  {"ingrediente_idx": 2, "motivo": "ningún candidato es el mismo alimento", "candidato_id": null, "supuestos": [], "alternativa_id": null, "alternativa": null}
 ]}

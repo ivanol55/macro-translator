@@ -78,7 +78,10 @@ function pintar(res) {
 
   for (const f of res.filas) {
     const tr = el("tr", { class: [!f.encontrado && "no-encontrado", f.aviso && f.encontrado && "con-aviso"].filter(Boolean).join(" ") });
-    tr.append(el("td", { class: "ingrediente" }, f.ingrediente), el("td", { class: "num" }, cantidad(f.gramos)));
+    const nombre = el("td", { class: "ingrediente" }, f.ingrediente);
+    // Sensitivity: another plausible variant changes the kcal a lot.
+    if (f.encontrado && f.sensibilidad) nombre.append(el("div", { class: "sensibilidad" }, f.sensibilidad));
+    tr.append(nombre, el("td", { class: "num" }, cantidad(f.gramos)));
     if (f.encontrado) {
       for (const m of MACROS) tr.append(el("td", { class: "num" }, num(f.redondeado[m])));
     } else {
@@ -102,6 +105,9 @@ function pintar(res) {
     const origen = f.encontrado ? enlace(describirOrigen(f.origen), f.origen && f.origen.url) : "no encontrado (no se estima)";
     const li = el("li", {}, el("span", { class: "fuente" }, f.ingrediente + ": "), origen);
     if (f.motivo) li.append(el("span", {}, ` — ${f.motivo}`));
+    if (f.alternativa && f.sensibilidad) {
+      li.append(el("br"), el("span", {}, "Alternativa: "), enlace(describirOrigen(f.alternativa), f.alternativa.url));
+    }
     fuentes.append(li);
   }
   detalles.append(el("h2", {}, "Fuente de cada fila"), fuentes);

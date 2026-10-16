@@ -74,7 +74,7 @@ The tests do not download data. They use a small fixture:
   (contents). Source: Open Food Facts, <https://world.openfoodfacts.org>.** Each row keeps
   its barcode, so you can find the product at
   `https://world.openfoodfacts.org/product/<barcode>`.
-- `tests/fixtures/usda/`: 18 real foods from FoodData Central Foundation Foods (April 2026)
+- `tests/fixtures/usda/`: 21 real foods from FoodData Central Foundation Foods (April 2026)
   and SR Legacy (April 2018), with only the nutrients the app uses.
   **Licence: CC0 1.0. Source: USDA FoodData Central.**
 

@@ -111,3 +111,8 @@ def test_api_key_never_reaches_the_browser(settings, food_db):
         assert "sk-secret-value" not in client.get(path).text
     r = client.post("/api/calcular", json={"texto": REFERENCIA_TEXTO})
     assert "sk-secret-value" not in r.text
+
+
+def test_static_files_are_revalidated(api):
+    for path in ("/", "/app.js", "/style.css"):
+        assert api.get(path).headers["cache-control"] == "no-cache"

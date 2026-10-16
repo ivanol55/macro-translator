@@ -244,3 +244,176 @@ def test_per_piece_guard(texto, cantidad, veces, gramos):
     assert out.gramos == pytest.approx(gramos)
     corrected = veces > 1 and gramos == cantidad
     assert any("es el total" in s for s in out.supuestos) == corrected
+
+
+# --------------------------------------------------------------------------- #
+# Assumptions of the choice and the sensitivity warning
+# --------------------------------------------------------------------------- #
+CARNE = {
+    "ingredientes": [ingrediente("Carne picada de ternera", "ground beef", 200, estado="crudo")]
+}
+
+
+def test_choice_assumptions_are_visible_and_the_reason_is_not_exact(settings, food_db, prompts):
+    res, _ = run(
+        settings,
+        food_db,
+        prompts,
+        CARNE,
+        {
+            "Carne picada de ternera": {
+                "elegir": "80% lean",
+                "supuestos": ["carne picada 80 % magra, 20 % grasa"],
+                "motivo": "Coincidencia exacta: carne picada cruda, coincide exactamente",
+            }
+        },
+    )
+    fila = res.filas[0]
+    assert "carne picada 80 % magra, 20 % grasa" in fila.supuestos
+    assert "exact" not in fila.motivo.lower()
+    assert fila.motivo == "Coincidencia aproximada: carne picada cruda, coincide aproximadamente"
+
+
+def test_exact_reason_stays_when_nothing_is_assumed(settings, food_db, prompts):
+    interp = {
+        "ingredientes": [
+            ingrediente("Huevos cocidos", "egg whole hard-boiled", 130, estado="cocido")
+        ]
+    }
+    res, _ = run(
+        settings,
+        food_db,
+        prompts,
+        interp,
+        {"Huevos cocidos": {"elegir": "hard-boiled", "motivo": "coincidencia exacta"}},
+    )
+    assert res.filas[0].motivo == "coincidencia exacta"
+
+
+def test_sensitivity_warning_in_the_row(settings, food_db, prompts):
+    res, _ = run(
+        settings,
+        food_db,
+        prompts,
+        CARNE,
+        {
+            "Carne picada de ternera": {
+                "elegir": "80% lean",
+                "supuestos": ["carne picada 80 % magra, 20 % grasa"],
+                "alternativa": "95% lean",
+                "alternativa_texto": "picada magra",
+            }
+        },
+    )
+    fila = res.filas[0]
+    assert fila.valores.kcal == pytest.approx(508)  # the chosen row, 254 kcal/100 g
+    assert fila.sensibilidad == "Si es picada magra: unas 230 kcal menos"
+    assert "95% lean" in fila.alternativa.nombre
+    assert fila.alternativa.url.startswith("https://fdc.nal.usda.gov/food-details/")
+    assert res.total.kcal == pytest.approx(508)  # the warning never changes the total
+
+
+def test_no_warning_when_the_variants_are_close(settings, food_db, prompts):
+    interp = {
+        "ingredientes": [ingrediente("Huevos cocidos", "egg whole cooked", 130, estado="cocido")]
+    }
+    res, _ = run(
+        settings,
+        food_db,
+        prompts,
+        interp,
+        {
+            "Huevos cocidos": {
+                "elegir": "hard-boiled",
+                "alternativa": "poached",
+                "alternativa_texto": "escalfados",
+            }
+        },
+    )
+    assert res.filas[0].sensibilidad is None  # 155 vs 143 kcal/100 g: 8 %
+    assert res.filas[0].alternativa is None
+
+
+@pytest.mark.parametrize("alternativa_id", ["U9", "O1", None])
+def test_a_wrong_alternative_is_dropped(settings, food_db, prompts, alternativa_id):
+    res, fake = run(
+        settings,
+        food_db,
+        prompts,
+        CARNE,
+        {
+            "Carne picada de ternera": {
+                "elegir": "80% lean",
+                "alternativa_id": alternativa_id,
+                "alternativa_texto": "x",
+            }
+        },
+    )
+    assert res.filas[0].encontrado
+    assert len(fake.requests) == 2  # no retry for a wrong alternative
+    # The wrong ID is dropped. The warning comes from the fat-variant fallback.
+    assert res.filas[0].sensibilidad == "Si es 95 % magra: unas 230 kcal menos"
+
+
+def test_no_warning_when_the_label_gives_the_kcal(settings, food_db, prompts):
+    interp = {
+        "ingredientes": [
+            ingrediente(
+                "Carne picada de ternera",
+                "ground beef",
+                200,
+                estado="crudo",
+                valores_usuario_100g={"kcal": 180, "prot": None, "carbs": None, "grasas": None},
+            )
+        ]
+    }
+    res, _ = run(
+        settings,
+        food_db,
+        prompts,
+        interp,
+        {
+            "Carne picada de ternera": {
+                "elegir": "80% lean",
+                "alternativa": "95% lean",
+                "alternativa_texto": "picada magra",
+            }
+        },
+    )
+    assert res.filas[0].valores.kcal == pytest.approx(360)
+    assert res.filas[0].sensibilidad is None
+
+
+def test_code_adds_the_assumption_the_llm_forgot(settings, food_db, prompts):
+    res, _ = run(
+        settings,
+        food_db,
+        prompts,
+        CARNE,
+        {
+            "Carne picada de ternera": {
+                "elegir": "80% lean",
+                "supuestos": [],
+                "motivo": "Coincidencia exacta",
+            }
+        },
+    )
+    fila = res.filas[0]
+    assert "La base de datos fija 80 % magra, 20 % grasa" in fila.supuestos
+    assert fila.motivo == "Coincidencia aproximada"
+
+
+def test_fat_variant_fallback_when_the_llm_gives_no_alternative(settings, food_db, prompts):
+    res, _ = run(settings, food_db, prompts, CARNE, {"Carne picada de ternera": "80% lean"})
+    fila = res.filas[0]
+    # Fixture variants: 70/30 (332 kcal), 95/5 (137 kcal). 95/5 changes the kcal most.
+    assert fila.sensibilidad == "Si es 95 % magra: unas 230 kcal menos"
+    assert "95% lean" in fila.alternativa.nombre
+
+
+def test_no_fat_fallback_for_foods_without_a_fat_percentage(settings, food_db, prompts):
+    interp = {
+        "ingredientes": [ingrediente("Huevos cocidos", "egg whole cooked", 130, estado="cocido")]
+    }
+    res, _ = run(settings, food_db, prompts, interp, {"Huevos cocidos": "hard-boiled"})
+    assert res.filas[0].sensibilidad is None

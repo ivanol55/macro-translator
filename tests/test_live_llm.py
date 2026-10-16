@@ -62,3 +62,14 @@ def test_unknown_food(live, prompts):
     res = run(live, prompts, "unicornio a la plancha, 200 g")
     assert len(res.filas) == 1 and not res.filas[0].encontrado
     assert res.total.kcal == 0
+
+
+def test_choice_assumptions_and_sensitivity(live, prompts):
+    res = run(live, prompts, "carne picada de ternera 200 g, cruda")
+    fila = res.filas[0]
+    assert fila.encontrado
+    if "%" in (fila.origen.nombre or ""):
+        assert any("%" in s for s in fila.supuestos)
+        assert "exact" not in (fila.motivo or "").lower()
+    if fila.sensibilidad:
+        assert fila.sensibilidad.startswith("Si es ")

@@ -64,6 +64,8 @@ def main() -> int:
         print(f"- {f.ingrediente}: {src}" + (f" — {f.motivo}" if f.motivo else ""))
         for s in f.supuestos:
             print(f"    supuesto: {s}")
+        if f.sensibilidad:
+            print(f"    sensibilidad: {f.sensibilidad} ({f.alternativa.nombre})")
         if f.aviso and f.encontrado:
             print(f"    aviso: {f.aviso}")
     for a in res.avisos:
