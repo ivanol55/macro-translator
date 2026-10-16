@@ -22,9 +22,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import subprocess
 import sys
 import time
+from collections import deque
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -124,17 +126,51 @@ def settings_for(entry: dict) -> Settings:
 # Instrumented LLM client: records every call and every chat_json phase
 # --------------------------------------------------------------------------- #
 class RecordingLLM(LLMClient):
-    def __init__(self, settings: Settings, **kw):
+    def __init__(self, settings: Settings, rpm: int = 0, **kw):
         super().__init__(settings, **kw)
         self.calls: list[dict] = []
         self.phases: list[dict] = []
+        self._rpm = int(rpm or 0)
+        self._times: deque[float] = deque()
+
+    def _throttle(self) -> None:
+        """Keep the request rate at or below rpm requests per 60 s window."""
+        if not self._rpm:
+            return
+        while True:
+            now = time.monotonic()
+            while self._times and now - self._times[0] > 60:
+                self._times.popleft()
+            if len(self._times) < self._rpm:
+                self._times.append(now)
+                return
+            time.sleep(max(0.05, 60 - (now - self._times[0]) + 0.05))
+
+    def _complete_throttled(
+        self, messages: list[dict], name: str, schema: dict, tries: int = 10
+    ) -> str:
+        retryable = ("HTTP 429", "HTTP 500", "HTTP 502", "HTTP 503", "HTTP 504")
+        for attempt in range(tries):
+            self._throttle()
+            try:
+                return super()._complete(messages, name, schema)
+            except LLMError as exc:
+                msg = str(exc)
+                if msg.startswith("LLMError: "):
+                    msg = msg[len("LLMError: ") :]
+                if attempt < tries - 1 and any(code in msg for code in retryable):
+                    delay = min(60.0, 2.0 * (attempt + 1))
+                    time.sleep(delay + random.uniform(0, 2))
+                    continue
+                raise
+        raise LLMError("El LLM no respondió tras agotar los reintentos.")
 
     def _complete(self, messages: list[dict], name: str, schema: dict) -> str:
         t0 = time.monotonic()
         content: str | None = None
         error: str | None = None
         try:
-            content = super()._complete(messages, name, schema)
+            content = self._complete_throttled(messages, name, schema)
         except Exception as exc:  # noqa: BLE001 - recorded and re-raised
             error = f"{type(exc).__name__}: {exc}"
             raise
@@ -405,7 +441,7 @@ def main() -> int:
             print(f"[{name}] database not found at {settings.db_path}; skipping")
             continue
         prompts = Prompts.load(settings.prompts_dir)
-        llm = RecordingLLM(settings)
+        llm = RecordingLLM(settings, rpm=int(entry.get("rpm", 0)))
         print(f"[{name}] -> {out_path.name}  ({settings.llm_base_url}, {settings.llm_model})")
         with out_path.open("w", encoding="utf-8") as fh:
             for case in cases:

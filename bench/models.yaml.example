@@ -14,6 +14,7 @@
 #   temperature   default 0
 #   timeout       seconds per request, default 180
 #   max_retries   0-2, default 2
+#   rpm           max requests per minute; 0 = no limit (default 0). Retries on HTTP 429.
 #
 # Values may be quoted with single or double quotes.
 
@@ -35,3 +36,13 @@ models:
     response_format: auto
     timeout: 120
     max_retries: 2
+
+  - name: hosted-gemini
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai
+    model: gemini-3.6-flash
+    api_key_env: GEMINI_API_KEY
+    response_format: json_object
+    temperature: 0
+    timeout: 120
+    max_retries: 2
+    rpm: 5
