@@ -18,7 +18,7 @@ jobs:
       - name: No data files in git
         run: sh scripts/check_no_data_files.sh
 
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.0
         with:
           enable-cache: true
 
