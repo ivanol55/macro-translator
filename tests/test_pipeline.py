@@ -10,14 +10,80 @@ from conftest import (
     FakeLLM,
     ingrediente,
 )
-from macro_translator.pipeline import calcular
+from macro_translator.models import Candidato, Ingrediente
+from macro_translator.pipeline import Eleccion, calcular, construir_fila
 
 REL = 0.02  # the acceptance tolerance: ±2 %
+
+
+def _cand(nombre, marca=None, kcal=100.0):
+    return Candidato(
+        clave="O1",
+        id=1,
+        fuente="OFF",
+        nombre=nombre,
+        marca=marca,
+        codigo_barras="1",
+        kcal=kcal,
+        prot=1,
+        carbs=1,
+        grasas=1,
+    )
+
+
+def _ing(**kw):
+    base = {
+        "nombre_es": "Yogur griego natural ligero",
+        "nombre_en": "greek yogurt light",
+        "marca": "Hacendado",
+        "gramos": 100,
+        "estado": "n/a",
+        "valores_usuario_100g": None,
+        "supuestos": [],
+        "cantidad_valida": True,
+        "avisos": [],
+    }
+    return Ingrediente(**{**base, **kw})
 
 
 def run(settings, food_db, prompts, interpretacion, elegir=None, texto="x"):
     fake = FakeLLM(interpretacion, elegir)
     return calcular(texto, fake.client(settings), food_db, prompts), fake
+
+
+def test_brand_mismatch_replaces_the_brand_claim_and_drops_the_alternative():
+    texto = "yogur estilo griego ligero natural hacendado"
+    cand = _cand("Yogur griego natural", "La Fageda", 60.0)
+    alt = _cand("Yogur griego natural azucarado", "Hacendado", 120.0)
+    el = Eleccion(
+        candidato=cand,
+        motivo="mismo alimento y marca",
+        supuestos=["sin azúcar (natural)"],
+        alternativa=alt,
+        alternativa_texto="azucarado",
+        opciones=[cand, alt],
+    )
+    fila = construir_fila(_ing(), el, texto)
+    assert fila.supuestos == ["No está el de Hacendado en la base de datos; uso el de La Fageda"]
+    assert fila.motivo == "mismo alimento"
+    assert fila.alternativa is None and fila.sensibilidad is None
+
+
+def test_a_compatible_alternative_is_kept():
+    texto = "yogur estilo griego ligero natural hacendado"
+    cand = _cand("Yogur griego natural", "Hacendado", 60.0)
+    alt = _cand("Yogur griego natural desnatado", "Hacendado", 20.0)
+    el = Eleccion(
+        candidato=cand,
+        motivo="coincide",
+        supuestos=[],
+        alternativa=alt,
+        alternativa_texto="desnatado",
+        opciones=[cand, alt],
+    )
+    fila = construir_fila(_ing(), el, texto)
+    assert fila.alternativa is not None
+    assert fila.sensibilidad
 
 
 def test_reference_case(settings, food_db, prompts):

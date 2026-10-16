@@ -3,7 +3,15 @@
 from __future__ import annotations
 
 import pytest
-from macro_translator.atributos import supuestos_del_candidato
+from macro_translator.atributos import (
+    compatible_con_texto,
+    es_espurio,
+    filtrar_supuestos,
+    limpiar_marca,
+    limpiar_motivo_espurio,
+    supuesto_de_marca,
+    supuestos_del_candidato,
+)
 from macro_translator.models import Candidato
 
 
@@ -101,11 +109,18 @@ def test_sugar_variant_is_added():
 def test_brand_is_declared_when_it_differs():
     off = cand("Tomate frito", "OFF")
     off = off.model_copy(update={"marca": "Hacendado"})
-    assert supuestos_del_candidato("Tomate frito", off, [], "Mercadona") == [
-        "La base de datos es de la marca Hacendado, no Mercadona"
-    ]
-    assert supuestos_del_candidato("Tomate frito", off, [], "Hacendado") == []
-    assert supuestos_del_candidato("Tomate frito", off, [], None) == []
+    assert supuesto_de_marca("Mercadona", off) == (
+        "No está el de Mercadona en la base de datos; uso el de Hacendado"
+    )
+    assert supuesto_de_marca("Hacendado", off) is None
+    assert supuesto_de_marca(None, off) is None
+    sin_marca = cand("Tomate frito", "OFF")
+    assert supuesto_de_marca("Mercadona", sin_marca) == (
+        "No está el de Mercadona en la base de datos"
+    )
+    # The brand claim leaves the reason: it must not say the brands match.
+    assert limpiar_marca("mismo alimento y marca") == "mismo alimento"
+    assert "marca" not in limpiar_marca("carne picada cruda, misma marca").lower()
 
 
 def test_skin():
@@ -126,3 +141,73 @@ def test_meat_only_means_without_skin():
         "La base de datos usa la versión sin piel",
         "La base de datos usa la cocción «asado» (roasted), no la del texto",
     ]
+
+
+# --------------------------------------------------------------------------- #
+# Fixes 1-2: no assumptions about what the user said, no format assumptions
+# --------------------------------------------------------------------------- #
+CASO = (
+    "71g chorizo sarta extra picante alcampo\n"
+    "75g palitos de surimi hacendado\n"
+    "193g pepino fresco\n"
+    "50g aceitunas verdes sin hueso hacendado\n"
+    "95g yogur estilo griego ligero natural hacendado"
+)
+
+
+@pytest.mark.parametrize(
+    ("supuesto", "espurio"),
+    [
+        ("formato: sarta", True),  # the user wrote "sarta"
+        ("formato: palitos", True),  # the user wrote "palitos"
+        ("formato: entero", True),  # format never changes the values
+        ("sin azúcar (natural)", True),  # the user wrote "natural"
+        ("piel: pelado", False),  # the user did not say the skin
+        ("algo de aceite = un chorrito", False),  # quantity, not an attribute
+        ("130 g es el total de los 2 huevos", False),  # quantity, not an attribute
+        ("El paquete entero: 403 g", False),  # quantity, not format
+        ("La base de datos fija 80 % magra, 20 % grasa", False),  # the text gives no %
+    ],
+)
+def test_es_espurio(supuesto, espurio):
+    assert es_espurio(supuesto, CASO) is espurio
+
+
+@pytest.mark.parametrize(
+    ("motivo", "esperado"),
+    [
+        ("El texto no especifica si es sarta o en rodajas", ""),
+        ("El texto no especifica si son palitos o trozos", ""),
+        ("Cocción al horno. El texto no especifica si es sarta o en rodajas", "Cocción al horno"),
+        ("El texto no especifica si es natural o azucarado", ""),
+        (
+            "Carne picada de ternera cruda; el texto no dice el porcentaje de grasa",
+            "Carne picada de ternera cruda, el texto no dice el porcentaje de grasa",
+        ),
+    ],
+)
+def test_motivo_espurio_se_limpia(motivo, esperado):
+    assert limpiar_motivo_espurio(motivo, CASO) == esperado
+
+
+# --------------------------------------------------------------------------- #
+# Fix 4: an alternative must satisfy the attributes the user gave
+# --------------------------------------------------------------------------- #
+def test_alternativa_incompatible_se_descarta():
+    assert not compatible_con_texto("Yogur al estilo griego natural azucarado (Hacendado)", CASO)
+    assert compatible_con_texto("Yogur griego natural (Hacendado)", CASO)
+    assert compatible_con_texto("Cualquier cosa sin datos", CASO)
+
+
+def test_reg_003_sin_supuestos_espurios():
+    # Fix 1-2: the format assumptions and the ones the user already made disappear.
+    assert filtrar_supuestos(["formato: sarta"], CASO) == []
+    assert filtrar_supuestos(["formato: palitos"], CASO) == []
+    assert filtrar_supuestos(["formato: entero"], CASO) == []
+    assert filtrar_supuestos(["sin azúcar (natural)"], CASO) == []
+    # The skin is a real nutritional assumption the user did not give: it stays.
+    assert filtrar_supuestos(["piel: pelado"], CASO) == ["piel: pelado"]
+    # Fix 3: the reason loses the brand claim, which the brand assumption replaces.
+    assert limpiar_marca("mismo alimento y marca") == "mismo alimento"
+    # Fix 4: the sweetened alternative contradicts "natural" and "ligero".
+    assert not compatible_con_texto("Yogur griego natural azucarado Hacendado", CASO)

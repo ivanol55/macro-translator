@@ -107,7 +107,7 @@ def normalizar(ing: IngredienteLLM, texto: str = "") -> Ingrediente:
         gramos=gramos,
         estado=ing.estado,
         valores_usuario_100g=valores,
-        supuestos=[s.strip() for s in ing.supuestos if s.strip()] + notas,
+        supuestos=atributos.filtrar_supuestos(ing.supuestos, texto) + notas,
         cantidad_valida=rec.ok,
         avisos=avisos,
     )
@@ -290,7 +290,7 @@ def _origen(c: Candidato) -> Origen:
     )
 
 
-def construir_fila(ing: Ingrediente, eleccion: Eleccion | None) -> Fila:
+def construir_fila(ing: Ingrediente, eleccion: Eleccion | None, texto: str = "") -> Fila:
     supuestos = list(ing.supuestos)
     if not ing.cantidad_valida:
         return Fila(
@@ -318,8 +318,10 @@ def construir_fila(ing: Ingrediente, eleccion: Eleccion | None) -> Fila:
     else:
         el = eleccion or Eleccion(candidato=None, motivo="sin candidatos en la base de datos")
         cand = el.candidato
-        motivo = limpiar_motivo(el.motivo, el.supuestos)
         if cand is None:
+            motivo = atributos.limpiar_motivo_espurio(
+                limpiar_motivo(el.motivo, el.supuestos), texto
+            )
             return Fila(
                 ingrediente=ing.nombre_es,
                 gramos=ing.gramos,
@@ -332,16 +334,25 @@ def construir_fila(ing: Ingrediente, eleccion: Eleccion | None) -> Fila:
                 supuestos=supuestos,
             )
         # What the database row fixes and the user did not say goes next to the table.
-        propios = el.supuestos + atributos.supuestos_del_candidato(
-            ing.nombre_es, cand, el.supuestos, ing.marca
-        )
+        del_llm = atributos.filtrar_supuestos(el.supuestos, texto)
+        propios = del_llm + atributos.supuestos_del_candidato(ing.nombre_es, cand, del_llm)
+        marca_sup = atributos.supuesto_de_marca(ing.marca, cand)
+        if marca_sup:
+            propios.append(marca_sup)
         supuestos.extend(propios)
-        motivo = limpiar_motivo(el.motivo, propios)
+        motivo = atributos.limpiar_motivo_espurio(limpiar_motivo(el.motivo, propios), texto)
+        if marca_sup:
+            motivo = atributos.limpiar_marca(motivo)
         v100 = Macros(kcal=cand.kcal, prot=cand.prot, carbs=cand.carbs, grasas=cand.grasas)
         origen = _origen(cand)
         alt, variante = el.alternativa, el.alternativa_texto
+        # The alternative must satisfy every attribute the user gave (Fix 4).
+        if alt is not None and not atributos.compatible_con_texto(alt.nombre, texto):
+            alt, variante = None, None
         if alt is None:  # the LLM gave none: try the same food with another fat %
             alt, variante = atributos.alternativa_por_grasa(cand, el.opciones) or (None, None)
+            if alt is not None and not atributos.compatible_con_texto(alt.nombre, texto):
+                alt, variante = None, None
         if alt is not None:
             sensibilidad = calc.aviso_sensibilidad(
                 cand.kcal, alt.kcal, ing.gramos, variante or alt.nombre
@@ -390,5 +401,5 @@ def calcular(texto: str, llm: LLMClient, db: FoodDB, prompts: Prompts) -> Result
     ingredientes = interpretar(texto, llm, prompts)
     candidatos = {i: buscar(db, ing) for i, ing in enumerate(ingredientes) if necesita_bd(ing)}
     elecciones = seleccionar(ingredientes, candidatos, llm, prompts)
-    filas = [construir_fila(ing, elecciones.get(i)) for i, ing in enumerate(ingredientes)]
+    filas = [construir_fila(ing, elecciones.get(i), texto) for i, ing in enumerate(ingredientes)]
     return totalizar(filas)

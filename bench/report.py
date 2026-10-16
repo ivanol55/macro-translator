@@ -16,12 +16,17 @@ import json
 import math
 import re
 import statistics
+import sys
 import unicodedata
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "backend"))
+
+from macro_translator.atributos import es_espurio  # noqa: E402
+
 CASES_DIR = ROOT / "bench" / "cases"
 RESULTS_DIR = ROOT / "bench" / "results"
 REPORT = ROOT / "bench" / "REPORT.md"
@@ -235,6 +240,17 @@ def evaluate_run(case: dict, rec: dict) -> dict:
                 counts["exact_claim"] += 1
                 fails.append(f"el motivo dice exacto con supuestos: «{item['concept']}»")
 
+    # spurious assumptions: format, or about an attribute the user already gave
+    for ii in range(len(items)):
+        pi = matched.get(ii)
+        if pi is None or pi >= len(filas):
+            continue
+        for s in filas[pi].get("supuestos") or []:
+            counts["sup_total"] += 1
+            if es_espurio(s, case["input"]):
+                counts["sup_spurious"] += 1
+                fails.append(f"supuesto espurio: «{s}»")
+
     # expected not found
     for concept in case.get("expected_not_found", []):
         counts["nf_total"] += 1
@@ -368,6 +384,7 @@ def aggregate_case(runs: list[dict]) -> dict:
         metrics["select_acc"].append(rate(c, "select_ok", "select_total"))
         metrics["notfound_acc"].append(rate(c, "nf_ok", "nf_total"))
         metrics["honesty_declared"].append(rate(c, "variant_declared", "variant_total"))
+        metrics["spurious_assumptions"].append(rate(c, "sup_spurious", "sup_total") or 0.0)
         metrics["exact_claim"].append(1.0 if c.get("exact_claim") else 0.0)
         metrics["final_acc"].append(rate(c, "final_ok", "final_total"))
         metrics["total_acc"].append(rate(c, "total_ok", "total_total"))
@@ -416,6 +433,7 @@ GLOBAL_METRICS = [
     ("notfound_acc", "«No encontrado» correcto"),
     ("false_not_found", "Falsos «no encontrado»"),
     ("honesty_declared", "Supuesto declarado (variantes)"),
+    ("spurious_assumptions", "Supuestos espurios (formato o ya dados)"),
     ("exact_claim", "Motivo dice «exacto» con supuestos"),
     ("final_acc", "Tabla final dentro de rango"),
     ("total_acc", "Total dentro de rango"),

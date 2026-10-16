@@ -65,6 +65,268 @@ def _sin_acentos(text: str) -> str:
     return "".join(c for c in text if not unicodedata.combining(c))
 
 
+def _singular(palabra: str) -> str:
+    """Crude singular: "palitos" -> "palito", "trozos" -> "trozo", "naturales" -> "natural"."""
+    if palabra.endswith("es") and len(palabra) > 4:
+        return palabra[:-2]
+    if palabra.endswith("s") and len(palabra) > 3:
+        return palabra[:-1]
+    return palabra
+
+
+def _tokens(texto: str) -> set[str]:
+    return {_singular(p) for p in re.findall(r"[a-z0-9%]+", _sin_acentos(texto))}
+
+
+def _contiene(texto: str, frase: str) -> bool:
+    """True when every word of `frase` (singular) appears in `texto`."""
+    tokens = _tokens(texto)
+    palabras = [_singular(p) for p in re.findall(r"[a-z0-9%]+", _sin_acentos(frase))]
+    return bool(palabras) and all(p in tokens for p in palabras)
+
+
+# --------------------------------------------------------------------------- #
+# Attribute groups: an attribute the row fixes and the user may have given.
+# A group holds mutually exclusive values. Each value lists `claves` (substrings
+# the user writes) and a `patron` (regex on the candidate name or the assumption).
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class Valor:
+    claves: tuple[str, ...]
+    patron: re.Pattern
+
+
+@dataclass(frozen=True)
+class Grupo:
+    nombre: str
+    nutricional: bool
+    valores: tuple[Valor, ...]
+
+
+GRUPOS: tuple[Grupo, ...] = (
+    Grupo(
+        "azucar",
+        True,
+        (
+            Valor(  # natural == sin azúcar: one synonym set for both
+                ("natural", "sin azucar", "no azucar", "unsweetened", "plain"),
+                re.compile(r"plain|natural|sin az[uú]car|unsweetened", re.IGNORECASE),
+            ),
+            Valor(
+                ("azucarado", "azucarada", "con azucar", "sweetened", "azucar"),
+                re.compile(r"azucarad|sweetened|with sugar|\bsugar\b", re.IGNORECASE),
+            ),
+        ),
+    ),
+    Grupo(
+        "grasa_lactea",
+        True,
+        (
+            Valor(
+                ("entera", "whole milk"),
+                re.compile(r"\bentera\b|whole\s?-?milk", re.IGNORECASE),
+            ),
+            Valor(
+                ("desnatada", "desnatado", "skim", "semidesnatada", "nonfat"),
+                re.compile(r"desnatad|skim|non-?fat|fat-free", re.IGNORECASE),
+            ),
+        ),
+    ),
+    Grupo(
+        "ligero",
+        True,
+        (Valor(("ligero", "light"), re.compile(r"\blight\b|ligero|bajo en grasa", re.IGNORECASE)),),
+    ),
+    Grupo(
+        "parte",
+        True,
+        (
+            Valor(("pechuga",), re.compile(r"\bbreast\b|pechuga", re.IGNORECASE)),
+            Valor(("muslo",), re.compile(r"\bthigh\b|muslo", re.IGNORECASE)),
+            Valor(("pierna",), re.compile(r"\bleg\b|pierna", re.IGNORECASE)),
+            Valor(("ala",), re.compile(r"\bwing\b|\bala\b", re.IGNORECASE)),
+        ),
+    ),
+    Grupo(
+        "piel",
+        True,
+        (
+            Valor(
+                ("sin piel", "pelado", "pelada", "pelados"),
+                re.compile(r"skinless|without skin|peeled|pelad|sin piel", re.IGNORECASE),
+            ),
+            Valor(
+                ("con piel",),
+                re.compile(r"with skin|meat and skin|con piel", re.IGNORECASE),
+            ),
+        ),
+    ),
+    Grupo(
+        "cacao",
+        True,
+        (Valor(("cacao", "cocoa"), re.compile(r"cacao|cocoa", re.IGNORECASE)),),
+    ),
+    Grupo(
+        "grasa_carne",
+        True,
+        (Valor(("grasa", "magra", "%"), re.compile(r"%|\bmagra\b", re.IGNORECASE)),),
+    ),
+)
+
+# Format attributes: they never change the values, so they are never declared.
+FORMATO = (
+    "formato",
+    "sarta",
+    "ristra",
+    "rodaja",
+    "loncha",
+    "palito",
+    "trozo",
+    "taco",
+    "rebanada",
+    "sin hueso",
+    "troceado",
+    "corte",
+    "fileteado",
+)
+
+
+def es_formato(texto: str) -> bool:
+    return any(_contiene(texto, palabra) for palabra in FORMATO)
+
+
+def valor_en_texto(texto: str, grupo: Grupo) -> int | None:
+    """Index of the value the user fixed, or None when the text does not say."""
+    for i, valor in enumerate(grupo.valores):
+        if any(_contiene(texto, clave) for clave in valor.claves):
+            return i
+    return None
+
+
+def valor_en_supuesto(texto: str, grupo: Grupo) -> int | None:
+    """Index of the value an assumption (or a candidate name) refers to."""
+    for i, valor in enumerate(grupo.valores):
+        if valor.patron.search(texto):
+            return i
+    return None
+
+
+def es_espurio(supuesto: str, texto: str) -> bool:
+    """True for a format assumption, or one about a value the user already gave."""
+    if es_formato(supuesto):
+        return True
+    for grupo in GRUPOS:
+        en_supuesto = valor_en_supuesto(supuesto, grupo)
+        if en_supuesto is None:
+            continue
+        en_texto = valor_en_texto(texto, grupo)
+        if en_texto is not None and en_texto == en_supuesto:
+            return True
+    return False
+
+
+def filtrar_supuestos(supuestos: list[str], texto: str) -> list[str]:
+    """Drop the assumptions the user already made, and every format assumption."""
+    return [s.strip() for s in supuestos if s.strip() and not es_espurio(s, texto)]
+
+
+def compatible_con_texto(nombre: str, texto: str) -> bool:
+    """A candidate (or alternative) must not contradict an attribute the user gave."""
+    for grupo in GRUPOS:
+        en_texto = valor_en_texto(texto, grupo)
+        if en_texto is None:
+            continue
+        otros = [
+            i
+            for i, valor in enumerate(grupo.valores)
+            if i != en_texto and valor.patron.search(nombre)
+        ]
+        if otros:
+            return False
+    return True
+
+
+_CUE = re.compile(
+    r"\b(?:no|ni)\s+(?:especifica|dice|indica|aclara|concreta|determina|se\s+sabe)\b",
+    re.IGNORECASE,
+)
+
+_STOP = {
+    "el",
+    "la",
+    "los",
+    "las",
+    "un",
+    "una",
+    "es",
+    "son",
+    "o",
+    "y",
+    "en",
+    "de",
+    "del",
+    "que",
+    "si",
+    "no",
+    "ni",
+    "al",
+    "con",
+    "por",
+    "se",
+    "su",
+    "lo",
+    "como",
+    "texto",
+}
+
+
+def limpiar_motivo_espurio(motivo: str, texto: str) -> str:
+    """Remove "el texto no especifica X" clauses when the text does say X (or X is format)."""
+    if not motivo or not texto:
+        return motivo
+    tokens = _tokens(texto)
+    partes = re.split(r"(?<=[.;])\s+|\s*,\s*", motivo)
+    out: list[str] = []
+    for parte in partes:
+        if _CUE.search(_sin_acentos(parte)):
+            propias = _tokens(parte) - _STOP
+            if (propias & tokens) or es_formato(parte):
+                continue
+        if parte.strip():
+            out.append(parte.strip(" ,.;"))
+    return ", ".join(p for p in out if p)
+
+
+_MARCA_CLAIM = re.compile(
+    r"\s*(?:,|y)\s+(?:(?:de\s+)?(?:la\s+)?misma\s+)?marca\b",
+    re.IGNORECASE,
+)
+
+
+def limpiar_marca(motivo: str) -> str:
+    """Remove "mismo alimento y marca" claims: the reason must not assert the brand."""
+    if not motivo:
+        return motivo
+    motivo = _MARCA_CLAIM.sub("", motivo)
+    return re.sub(r"\s{2,}", " ", motivo).strip(" ,;") or "es el mismo alimento"
+
+
+def supuesto_de_marca(marca_usuario: str | None, cand: Candidato) -> str | None:
+    """One assumption when the database row is another brand than the user asked."""
+    if not marca_usuario:
+        return None
+    usuario = _sin_acentos(marca_usuario)
+    cand_marca = _sin_acentos(cand.marca or "")
+    if not usuario or usuario in cand_marca:
+        return None
+    if cand.marca:
+        return (
+            f"No está el de {marca_usuario.strip()} en la base de datos; "
+            f"uso el de {cand.marca.strip()}"
+        )
+    return f"No está el de {marca_usuario.strip()} en la base de datos"
+
+
 # --------------------------------------------------------------------------- #
 # Extensible table: attributes fixed by the row that the user did not give.
 # --------------------------------------------------------------------------- #
@@ -160,9 +422,7 @@ def _reglas_extra(nombre: str, usuario: str, ya: str, fuente: str) -> list[str]:
     return out
 
 
-def supuestos_del_candidato(
-    nombre_es: str, cand: Candidato, del_llm: list[str], marca: str | None = None
-) -> list[str]:
+def supuestos_del_candidato(nombre_es: str, cand: Candidato, del_llm: list[str]) -> list[str]:
     """Assumptions to add for a row. Skip the ones that the LLM already wrote."""
     usuario = _sin_acentos(nombre_es)
     ya = _sin_acentos(" ".join(del_llm))
@@ -196,15 +456,6 @@ def supuestos_del_candidato(
 
     ya_con_out = _sin_acentos(" ".join(del_llm + out))
     out += _reglas_extra(cand.nombre, usuario, ya_con_out, cand.fuente)
-
-    if marca:
-        m_usuario = _sin_acentos(marca)
-        m_cand = _sin_acentos(cand.marca or "")
-        if m_usuario and m_usuario not in m_cand and m_usuario not in ya_con_out:
-            if m_cand:
-                out.append(f"La base de datos es de la marca {cand.marca}, no {marca.strip()}")
-            else:
-                out.append(f"La base de datos no tiene la marca {marca.strip()}")
 
     return out
 
