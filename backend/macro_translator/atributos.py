@@ -460,6 +460,178 @@ def supuestos_del_candidato(nombre_es: str, cand: Candidato, del_llm: list[str])
     return out
 
 
+# --------------------------------------------------------------------------- #
+# Value-based variant assumptions.
+#
+# When the name of the row does not fix a nutritional variant (the generic
+# "Leche", "Carne picada", "Queso" rows) and the user did not give it either,
+# the per-100 g values of the chosen row fix it. The table below maps the fat
+# content of a food with known variants to its label. The boundaries are the
+# brief's: whole milk >=3 g, semi-skimmed 1.2-2 g, skimmed <=0.5 g per 100 g.
+# --------------------------------------------------------------------------- #
+# (min fat, max fat, label). A gap (e.g. 0.5-1.2 g) has no label.
+RANGOS_GRASA_LECHE: tuple[tuple[float, float, str], ...] = (
+    (0.0, 0.5, "desnatada"),
+    (1.2, 2.0, "semidesnatada"),
+    (3.0, float("inf"), "entera"),
+)
+RANGOS_GRASA_YOGUR: tuple[tuple[float, float, str], ...] = (
+    (0.0, 0.5, "desnatado"),
+    (1.2, 2.0, "semidesnatado"),
+    (3.0, float("inf"), "entero"),
+)
+
+
+def _g(x: float) -> str:
+    """A number as Spanish text: 3.6 -> 3,6."""
+    return f"{x:g}".replace(".", ",")
+
+
+def _etiqueta_grasa(grasas: float, rangos: tuple[tuple[float, float, str], ...]) -> str | None:
+    for low, high, etiqueta in rangos:
+        if low <= grasas <= high:
+            return etiqueta
+    return None
+
+
+def _leche(cand: Candidato) -> str:
+    etiqueta = _etiqueta_grasa(cand.grasas, RANGOS_GRASA_LECHE)
+    sufijo = f" ({etiqueta})" if etiqueta else ""
+    return f"Leche: uso una con {_g(cand.grasas)} g de grasa/100 g{sufijo}"
+
+
+def _yogur(cand: Candidato) -> str:
+    etiqueta = _etiqueta_grasa(cand.grasas, RANGOS_GRASA_YOGUR)
+    sufijo = f" ({etiqueta})" if etiqueta else ""
+    return f"Yogur: uso uno con {_g(cand.grasas)} g de grasa/100 g{sufijo}"
+
+
+def _grasa_de(nombre: str) -> Callable[[Candidato], str]:
+    return lambda cand: f"{nombre}: el producto elegido tiene {_g(cand.grasas)} g de grasa/100 g"
+
+
+@dataclass(frozen=True)
+class ReglaValor:
+    """A food with known variants that the row does not name.
+
+    `tipo` matches the ingredient (Spanish, without accents). `usuario_claves`
+    are words that mean the user already gave the attribute; `ya_claves` are
+    words that mean another rule (or the LLM) already declared it.
+    """
+
+    tipo: re.Pattern
+    render: Callable[[Candidato], str]
+    usuario_claves: tuple[str, ...] = ()
+    ya_claves: tuple[str, ...] = ()
+
+
+REGLAS_VALOR: tuple[ReglaValor, ...] = (
+    ReglaValor(
+        re.compile(r"\bleche\b"),
+        _leche,
+        usuario_claves=("entera", "desnatad", "semidesnat", "grasa", "%"),
+        ya_claves=("entera", "desnatad", "semidesnat", "grasa"),
+    ),
+    ReglaValor(
+        re.compile(r"\byogur"),
+        _yogur,
+        usuario_claves=("entero", "desnatad", "grasa", "%", "azucar", "natural", "light", "ligero"),
+        ya_claves=("entero", "desnatad", "grasa", "azucar", "versión"),
+    ),
+    ReglaValor(
+        re.compile(r"carne picada|\bpicada\b"),
+        _grasa_de("Carne picada"),
+        usuario_claves=("grasa", "magra", "%"),
+        ya_claves=("grasa", "magra", "%"),
+    ),
+    ReglaValor(
+        re.compile(r"\bqueso\b"),
+        _grasa_de("Queso"),
+        usuario_claves=("grasa", "%"),
+        ya_claves=("grasa", "%"),
+    ),
+    ReglaValor(
+        re.compile(r"chocolate"),
+        _grasa_de("Chocolate"),
+        usuario_claves=("grasa", "%"),
+        ya_claves=("grasa", "%"),
+    ),
+    ReglaValor(
+        re.compile(r"\bpollo\b"),
+        _grasa_de("Pollo"),
+        usuario_claves=("grasa", "%", "piel"),
+        ya_claves=("grasa", "%", "piel"),
+    ),
+    ReglaValor(
+        re.compile(r"mantequilla"),
+        _grasa_de("Mantequilla"),
+        usuario_claves=("grasa", "%", "sal"),
+        ya_claves=("grasa", "%"),
+    ),
+    ReglaValor(
+        re.compile(r"\bnata\b"),
+        _grasa_de("Nata"),
+        usuario_claves=("grasa", "%"),
+        ya_claves=("grasa", "%"),
+    ),
+    ReglaValor(
+        re.compile(r"\batun\b"),
+        _grasa_de("Atún"),
+        usuario_claves=("grasa", "%", "aceite", "natural"),
+        ya_claves=("grasa", "%", "aceite"),
+    ),
+    ReglaValor(
+        re.compile(r"salmon"),
+        _grasa_de("Salmón"),
+        usuario_claves=("grasa", "%", "piel"),
+        ya_claves=("grasa", "%", "piel"),
+    ),
+    ReglaValor(
+        re.compile(r"gamba"),
+        _grasa_de("Gambas"),
+        usuario_claves=("grasa", "%"),
+        ya_claves=("grasa", "%"),
+    ),
+    ReglaValor(
+        re.compile(r"mayonesa"),
+        _grasa_de("Mayonesa"),
+        usuario_claves=("grasa", "%", "light", "ligera"),
+        ya_claves=("grasa", "%"),
+    ),
+    ReglaValor(
+        re.compile(r"chorizo|salchichon|embutido|salchicha"),
+        _grasa_de("Embutido"),
+        usuario_claves=("grasa", "%"),
+        ya_claves=("grasa", "%"),
+    ),
+    ReglaValor(
+        re.compile(r"almendra|nuez|nueces|pistacho|cacahuete"),
+        _grasa_de("Frutos secos"),
+        usuario_claves=("grasa", "%", "tostad"),
+        ya_claves=("grasa", "%"),
+    ),
+)
+
+
+def supuestos_del_valor(nombre_es: str, cand: Candidato, del_llm: list[str]) -> list[str]:
+    """Variant assumptions the row's values fix when neither the name nor the user does."""
+    usuario = _sin_acentos(nombre_es)
+    ya = _sin_acentos(" ".join(del_llm))
+    out: list[str] = []
+    for regla in REGLAS_VALOR:
+        if not regla.tipo.search(usuario):
+            continue
+        if any(k in usuario for k in regla.usuario_claves):
+            continue
+        if any(k in ya for k in regla.ya_claves):
+            continue
+        texto = regla.render(cand)
+        if texto and _sin_acentos(texto) not in ya:
+            out.append(texto)
+            ya = _sin_acentos(" ".join([ya, texto]))
+    return out
+
+
 def _familia_grasa(nombre: str) -> str | None:
     """The name without its fat percentage: the same food in another fat variant."""
     m = GRASA_RE.search(nombre)

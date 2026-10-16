@@ -336,6 +336,9 @@ def construir_fila(ing: Ingrediente, eleccion: Eleccion | None, texto: str = "")
         # What the database row fixes and the user did not say goes next to the table.
         del_llm = atributos.filtrar_supuestos(el.supuestos, texto)
         propios = del_llm + atributos.supuestos_del_candidato(ing.nombre_es, cand, del_llm)
+        # The rows with generic names ("Leche", "Carne picada") fix the variant with
+        # their own values, not with a variant word in the name.
+        propios += atributos.supuestos_del_valor(ing.nombre_es, cand, propios)
         marca_sup = atributos.supuesto_de_marca(ing.marca, cand)
         if marca_sup:
             propios.append(marca_sup)

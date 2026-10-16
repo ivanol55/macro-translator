@@ -11,22 +11,29 @@ from macro_translator.atributos import (
     limpiar_motivo_espurio,
     supuesto_de_marca,
     supuestos_del_candidato,
+    supuestos_del_valor,
 )
 from macro_translator.models import Candidato
 
 
-def cand(nombre: str, fuente: str = "USDA") -> Candidato:
+def cand(
+    nombre: str,
+    fuente: str = "USDA",
+    grasas: float = 5,
+    kcal: float = 100,
+    marca: str | None = None,
+) -> Candidato:
     return Candidato(
         clave="U1",
         id=1,
         fuente=fuente,
         nombre=nombre,
-        marca=None,
+        marca=marca,
         codigo_barras=None,
-        kcal=100,
+        kcal=kcal,
         prot=10,
         carbs=0,
-        grasas=5,
+        grasas=grasas,
     )
 
 
@@ -200,7 +207,6 @@ def test_alternativa_incompatible_se_descarta():
 
 
 def test_reg_003_sin_supuestos_espurios():
-    # Fix 1-2: the format assumptions and the ones the user already made disappear.
     assert filtrar_supuestos(["formato: sarta"], CASO) == []
     assert filtrar_supuestos(["formato: palitos"], CASO) == []
     assert filtrar_supuestos(["formato: entero"], CASO) == []
@@ -211,3 +217,57 @@ def test_reg_003_sin_supuestos_espurios():
     assert limpiar_marca("mismo alimento y marca") == "mismo alimento"
     # Fix 4: the sweetened alternative contradicts "natural" and "ligero".
     assert not compatible_con_texto("Yogur griego natural azucarado Hacendado", CASO)
+
+
+# --------------------------------------------------------------------------- #
+# Value-based variant assumptions (var-001, var-003)
+# --------------------------------------------------------------------------- #
+def test_leche_declara_la_variante_por_su_grasa():
+    # var-003: the generic OFF "Leche" row has 3.6 g of fat/100 g.
+    assert supuestos_del_valor("Leche", cand("Leche", "OFF", grasas=3.6), []) == [
+        "Leche: uso una con 3,6 g de grasa/100 g (entera)"
+    ]
+    assert supuestos_del_valor("Leche", cand("Leche", "OFF", grasas=1.5), []) == [
+        "Leche: uso una con 1,5 g de grasa/100 g (semidesnatada)"
+    ]
+    assert supuestos_del_valor("Leche", cand("Leche", "OFF", grasas=0.3), []) == [
+        "Leche: uso una con 0,3 g de grasa/100 g (desnatada)"
+    ]
+    # A gap (0.8 g) has no variant label, but the value is still declared.
+    assert supuestos_del_valor("Leche", cand("Leche", "OFF", grasas=0.8), []) == [
+        "Leche: uso una con 0,8 g de grasa/100 g"
+    ]
+
+
+def test_leche_no_declara_si_ya_esta_fijada():
+    off = cand("Leche", "OFF", grasas=3.6)
+    assert supuestos_del_valor("Leche entera", off, []) == []  # the user said it
+    assert supuestos_del_valor("Leche desnatada", off, []) == []
+    # The name rule already declared the variant:
+    assert supuestos_del_valor("Leche", off, ["La base de datos usa la versión entera"]) == []
+
+
+def test_carne_picada_declara_la_grasa_por_sus_valores():
+    # var-001 run 0: "Beef, grass-fed, ground, raw" has 12.73 g of fat/100 g.
+    base = "Beef, grass-fed, ground, raw"
+    assert supuestos_del_valor("carne picada de ternera", cand(base, grasas=12.73), []) == [
+        "Carne picada: el producto elegido tiene 12,73 g de grasa/100 g"
+    ]
+    # The user gave the fat percentage, or the name rule already declared it.
+    assert supuestos_del_valor("carne picada 80 % magra", cand(base, grasas=12.73), []) == []
+    ya = ["La base de datos fija 80 % magra, 20 % grasa"]
+    assert (
+        supuestos_del_valor(
+            "carne picada", cand("Beef, ground, 80% lean meat / 20% fat", grasas=20), ya
+        )
+        == []
+    )
+
+
+def test_yogur_y_queso_declaran_por_sus_valores():
+    assert supuestos_del_valor(
+        "yogur griego", cand("Yogurt, Greek, plain, lowfat", grasas=1.92), []
+    ) == ["Yogur: uso uno con 1,92 g de grasa/100 g (semidesnatado)"]
+    assert supuestos_del_valor("queso curado", cand("Queso Curado", "OFF", grasas=40), []) == [
+        "Queso: el producto elegido tiene 40 g de grasa/100 g"
+    ]

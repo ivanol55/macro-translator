@@ -1,10 +1,11 @@
 # Revisión de casos del benchmark
 
-El informe del benchmark marca 46 casos con `needs_review`. Aquí está cada caso, el
+El informe del benchmark marca los casos con `needs_review`. Aquí está cada caso, el
 cambio que propongo y el motivo. Marca `[x]` en la casilla para aprobar.
 
-Resumen: 46 casos revisados. 43 se mantienen y 3 se han cambiado con tu aprobación:
-`eti-003` y `eti-008` (reglas nuevas de la fase 1) y `rui-009` (rango imposible).
+Resumen: 46 casos revisados a mano (43 se mantienen y 3 se cambiaron con tu aprobación:
+`eti-003` y `eti-008`, reglas nuevas de la fase 1, y `rui-009`, rango imposible) más 43
+casos generados en la sección 10.
 
 Leyenda: **Caso** es lo que hoy espera el fichero. **Cambio** es mi propuesta.
 
@@ -112,3 +113,37 @@ supuesto. La declaración se refuerza en la fase 3.
 | Aprobado | id | Caso actual | Cambio propuesto | Motivo |
 |---|---|---|---|---|
 | [ ] | `qty-010` | "un plátano": estima 120 g, tol. 30 %. | Mantener. | El peso por pieza es una estimación: la tolerancia ancha es correcta. |
+
+## 10. Variantes generadas (`variantes`) — revisar
+
+Estos 43 casos nuevos salen de `bench/generate_variants.py`. El método es híbrido:
+la estructura y los valores (el «gold») salen de una consulta a la base de datos; el
+texto natural lo escribe el modelo y una validación de código lo comprueba. La
+validación exige que el texto conserve todos los números y el alimento, y que NO fije
+la variante.
+
+Cada caso cubre un alimento con variantes y una cantidad. El texto no fija la variante.
+Por eso el caso pide declarar un supuesto. Los candidatos válidos salen de una consulta
+SQL sobre `alimentos` (USDA y el genérico de Open Food Facts).
+
+Todas las filas piden el mismo cambio: **mantener.** El rango de kcal y el de macros
+cubren las variantes reales de la base de datos. Marca `[x]` para aprobar cada caso.
+
+| Aprobado | ids | Alimento | Supuesto que se exige | Candidatos (fuente) |
+|---|---|---|---|---|
+| [ ] | `genvar-leche-100/200/250`, `genvar-leche-vaca-200/250` | leche | grasa de la leche | OFF genérico `Leche` |
+| [ ] | `genvar-yogur-griego-125/200`, `genvar-yogur-natural-125/200` | yogur | entera o desnatada | USDA `Yogurt, Greek/plain` + OFF |
+| [ ] | `genvar-queso-30/40/60`, `genvar-queso-curado-30/40` | queso | grasa del queso | USDA `Cheese, %` + OFF |
+| [ ] | `genvar-mantequilla-15/25` | mantequilla | grasa de la mantequilla | USDA `Butter, %` + OFF |
+| [ ] | `genvar-nata-30/50` | nata | grasa de la nata | USDA `Cream, %` + OFF |
+| [ ] | `genvar-carne-picada-ternera-100/150/200`, `genvar-carne-picada-cerdo-150/200`, `genvar-carne-picada-pavo-150/200`, `genvar-carne-picada-150/200` | carne picada | grasa de la carne picada | USDA `Beef/Pork/Turkey, ground` + OFF |
+| [ ] | `genvar-pollo-150/200`, `genvar-pechuga-pollo-120/150` | pollo | piel o grasa | USDA `Chicken, broiler%` + OFF |
+| [ ] | `genvar-atun-80/120` | atún | grasa del atún | USDA `Fish, tuna%` + OFF |
+| [ ] | `genvar-salmon-120/150` | salmón | grasa del salmón | USDA `Fish, salmon%` + OFF |
+| [ ] | `genvar-gambas-100/150` | gambas | grasa de las gambas | USDA `Crustaceans, shrimp%` + OFF |
+| [ ] | `genvar-mayonesa-15/20` | mayonesa | grasa de la mayonesa | USDA `Salad dressing, mayonnaise%` + OFF |
+| [ ] | `genvar-almendras-20/30` | almendras | grasa de los frutos secos | USDA `Nuts, almonds%` + OFF |
+| [ ] | `genvar-chocolate-negro-20/30` | chocolate negro | grasa del chocolate | USDA `Chocolate, dark, %` + OFF |
+
+Nota: el texto del modelo puede incluir una frase natural como «200 ml de leche». Si no
+pasa la validación, el script escribe el texto estructurado y lo marca para revisar.
