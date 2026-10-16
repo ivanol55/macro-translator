@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -45,8 +46,46 @@ class Prompts:
 # --------------------------------------------------------------------------- #
 # Step 1: interpretation
 # --------------------------------------------------------------------------- #
-def normalizar(ing: IngredienteLLM) -> Ingrediente:
+def _numero_re(x: float) -> str:
+    """Regex for a number as the user can write it: 130, 62.5, 62,5."""
+    if x == int(x):
+        return rf"(?<![\d.,]){int(x)}(?![\d]|[.,]\d)"
+    entero, dec = f"{x:g}".split(".")
+    return rf"(?<![\d.,]){entero}[.,]{dec}(?!\d)"
+
+
+def corregir_veces(ing: IngredienteLLM, texto: str) -> tuple[IngredienteLLM, str | None]:
+    """Apply the brief's rule in code: "huevos, 2, 130g" is 130 g in total.
+
+    A weight is per piece only with a marker: "2×130 g", "130 g cada uno",
+    "2 huevos de 130 g". When the LLM says per piece (veces > 1), the weight is
+    in the text, and no marker is next to it, the weight is the total.
+    An estimated weight (not in the text, as in "2 huevos") does not change.
+    """
+    if ing.veces <= 1 or ing.unidad not in ("g", "kg", "ml", "l"):
+        return ing, None
+    n = _numero_re(ing.cantidad)
+    if not re.search(n, texto):
+        return ing, None
+    marcas = (
+        rf"\d\s*[x×*]\s*{n}",  # 2×130 g, 2 x 130 g
+        rf"{n}\s*(g|gr|gramos|kg|ml|l)?\.?\s*(cada|por\s+(pieza|unidad))",  # 130 g cada uno
+        rf"\bde\s+{n}\s*(g|gr|gramos|kg|ml|l)\b",  # 2 huevos de 130 g
+    )
+    if any(re.search(m, texto, re.IGNORECASE) for m in marcas):
+        return ing, None
+    nota = (
+        f"{ing.cantidad:g} {ing.unidad} es el total: el texto no dice que sea por pieza "
+        f'(regla: "2, 130 g" = 130 g en total)'
+    )
+    return ing.model_copy(update={"veces": 1}), nota
+
+
+def normalizar(ing: IngredienteLLM, texto: str = "") -> Ingrediente:
+    ing, nota = corregir_veces(ing, texto)
     gramos, notas = calc.a_gramos(ing)
+    if nota:
+        notas.insert(0, nota)
     return Ingrediente(
         nombre_es=ing.nombre_es.strip(),
         nombre_en=ing.nombre_en.strip(),
@@ -60,7 +99,7 @@ def normalizar(ing: IngredienteLLM) -> Ingrediente:
 
 def interpretar(texto: str, llm: LLMClient, prompts: Prompts) -> list[Ingrediente]:
     res = llm.chat_json(prompts.parse, texto, Interpretacion, "interpretacion", prompts.retry)
-    return [normalizar(i) for i in res.ingredientes]
+    return [normalizar(i, texto) for i in res.ingredientes]
 
 
 # --------------------------------------------------------------------------- #

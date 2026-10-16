@@ -34,6 +34,26 @@ def test_inline_refs_removes_defs():
     assert "$defs" not in json.dumps(schema) and "$ref" not in json.dumps(schema)
 
 
+def test_schema_sent_to_the_llm_requires_every_field(settings):
+    """llama.cpp lets the model skip optional fields: the brand got lost that way."""
+    sent = []
+
+    def handler(request):
+        sent.append(json.loads(request.content)["response_format"]["json_schema"]["schema"])
+        return answer(json.dumps(VALID))
+
+    llm = LLMClient(settings, transport=httpx.MockTransport(handler))
+    res = llm.chat_json("sys", "user", Interpretacion, "interpretacion", RETRY)
+    item = sent[0]["properties"]["ingredientes"]["items"]
+    assert set(item["required"]) == set(item["properties"]) >= {"marca", "veces", "estado"}
+    etiqueta = next(
+        o for o in item["properties"]["valores_usuario_100g"]["anyOf"] if o.get("type") == "object"
+    )
+    assert set(etiqueta["required"]) == {"kcal", "prot", "carbs", "grasas"}
+    # The Pydantic model still accepts an answer without the optional fields.
+    assert res.ingredientes[0].marca is None and res.ingredientes[0].veces == 1
+
+
 def test_retry_with_the_validation_error(settings):
     calls = []
 

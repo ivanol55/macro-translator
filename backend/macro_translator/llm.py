@@ -67,6 +67,29 @@ def inline_refs(schema: dict) -> dict:
     return walk(schema)
 
 
+def require_all(schema: dict) -> dict:
+    """Mark every property of every object as required, in the schema sent to the LLM.
+
+    llama.cpp turns optional properties into a grammar that lets the model skip
+    them, and small models then skip fields such as "marca". The Pydantic models
+    keep their defaults, so a server without JSON mode can still omit fields.
+    """
+
+    def walk(node: Any) -> Any:
+        if isinstance(node, dict):
+            node = {k: walk(v) for k, v in node.items()}
+            if isinstance(node.get("properties"), dict):
+                node["required"] = list(node["properties"])
+                for prop in node["properties"].values():
+                    prop.pop("default", None)
+            return node
+        if isinstance(node, list):
+            return [walk(v) for v in node]
+        return node
+
+    return walk(schema)
+
+
 def _validation_text(exc: ValidationError) -> str:
     lines = []
     for e in exc.errors()[:10]:
@@ -157,7 +180,7 @@ class LLMClient:
         schema: dict | None = None,
         context: dict | None = None,
     ) -> T:
-        schema = schema or inline_refs(model.model_json_schema())
+        schema = schema or require_all(inline_refs(model.model_json_schema()))
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         last_error = ""
         for attempt in range(1 + self.settings.llm_max_retries):

@@ -216,3 +216,31 @@ def test_llm_sees_no_invented_values(settings, food_db, prompts):
     assert "Oil, olive, salad or cooking" in selection
     for fila in res.filas[1:]:
         assert fila.origen.tipo in {"OFF", "USDA"}
+
+
+# --------------------------------------------------------------------------- #
+# Per-piece guard: "huevos, 2, 130g" is 130 g even if the LLM says 2 × 130 g
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    ("texto", "cantidad", "veces", "gramos"),
+    [
+        ("Huevos cocidos, 2, 130g", 130, 2, 130),  # the LLM got it wrong: total
+        ("2 huevos cocidos, 130 g", 130, 2, 130),
+        ("salmón, 2 lomos, 62,5 g", 62.5, 2, 62.5),
+        ("pechuga 2×130 g", 130, 2, 260),  # per piece: marker ×
+        ("pechuga 2 x 130g", 130, 2, 260),
+        ("2 huevos de 65 g", 65, 2, 130),  # per piece: "de 65 g"
+        ("2 lomos, 130 g cada uno", 130, 2, 260),  # per piece: "cada uno"
+        ("2 huevos", 50, 2, 100),  # estimated weight: not in the text
+        ("Huevos cocidos, 2, 130g", 130, 1, 130),  # the LLM got it right
+    ],
+)
+def test_per_piece_guard(texto, cantidad, veces, gramos):
+    from macro_translator.models import IngredienteLLM
+    from macro_translator.pipeline import normalizar
+
+    ing = IngredienteLLM.model_validate(ingrediente("X", "x", cantidad, veces=veces))
+    out = normalizar(ing, texto)
+    assert out.gramos == pytest.approx(gramos)
+    corrected = veces > 1 and gramos == cantidad
+    assert any("es el total" in s for s in out.supuestos) == corrected

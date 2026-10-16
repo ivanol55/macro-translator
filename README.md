@@ -49,6 +49,9 @@ text ──► 1. Interpret (LLM call 1) ──► ingredients, quantity as writ
 
 - Label values that the user types ("78 kcal, 18 g de proteína por 100 g") win over the
   database.
+- "huevos, 2, 130g" is 130 g in total. Only a marker ("2×130 g", "cada uno", "de 130 g") makes
+  a weight per piece. The backend checks this rule in code, because small models sometimes read
+  "2, 130g" as 2 × 130 g.
 - The LLM output is always validated with Pydantic. On an error the backend asks again (max
   2 times) and gives the error to the model.
 - No native tool calling. The backend uses `response_format` (JSON schema or JSON object)
@@ -97,6 +100,7 @@ The API key stays in the backend. The browser never receives it.
 | LM Studio | `http://host.docker.internal:1234/v1` | `qwen3.5-9b` | Start the server in LM Studio (Developer tab). |
 | Ollama | `http://host.docker.internal:11434/v1` | `qwen3.5:9b` | `ollama serve`, then `ollama pull` the model. |
 | llama.cpp | `http://host.docker.internal:8080/v1` | `gpt-oss-20b` | `llama-server -m model.gguf --jinja` |
+| llama.cpp on another PC | `http://192.168.1.50:8081/v1` | `qwen3.5-9b` | Set `LLM_API_KEY` if the server has `--api-key`. See the Colima note below. |
 | mlx-lm | `http://host.docker.internal:8081/v1` | full model path | `mlx_lm.server --model <path> --port 8081` |
 | Hosted (OpenAI example) | `https://api.openai.com/v1` | `gpt-5-mini` | Set `LLM_API_KEY`. Any OpenAI-compatible provider works. |
 
@@ -107,8 +111,16 @@ answer. If your server supports it, turn thinking off with `LLM_EXTRA_BODY`. The
 adds this JSON to each request:
 
 ```bash
-LLM_EXTRA_BODY={"chat_template_kwargs":{"enable_thinking":false}}
+LLM_EXTRA_BODY='{"chat_template_kwargs":{"enable_thinking":false}}'
 ```
+
+Use single quotes. Then the same `.env` works for Docker Compose and for `set -a; . ./.env`.
+With Qwen3.5 9B on llama.cpp, thinking off gave the same results about 5 times faster.
+
+**LLM on another machine, Docker on macOS with Colima.** The containers may not reach other
+machines on your LAN: macOS can block local-network access for the Colima helper process. Then
+run the app without Docker (see [Development](#development)), or run it on the machine of the
+model.
 
 **Servers without JSON mode.** `LLM_RESPONSE_FORMAT=auto` tries `json_schema`, then
 `json_object`, then plain text. Set it to `none` if your server fails in an unexpected way.
@@ -218,6 +230,10 @@ Expected: ~604 / ~88.9 / ~4.6 / ~25.8. All values are within ±2 % (carbohydrate
 |---|---|---|---|---|
 | gpt-oss-20b (MXFP4) | llama.cpp `llama-server` | `json_schema` | pass, 32 s | 3/3 pass |
 | Qwen3.5-9B (MLX 8-bit) | `mlx_lm.server`, thinking off | none: JSON extracted from text | pass, 42 s | 3/3 pass |
+| Qwen3.5-9B (IQ4_XS) | llama.cpp Vulkan on an AMD RX 6600 PC on the LAN, thinking off | `json_schema` | pass, 29 s | 3/3 pass, 2 runs |
+| Qwen3.5-9B (IQ4_XS) | same PC, thinking on (budget 1024 tokens) | `json_schema` | pass, 166 s | not run |
+
+The RX 6600 ran at 17 tokens/s in this test (screen off, low memory clock), not its usual 38.
 
 The live tests also check: "huevos, 2, 130g" = 130 g, "2×130 g" = 260 g, "10 ml de aceite"
 = 9.2 g, and "unicornio a la plancha" = "no encontrado".
