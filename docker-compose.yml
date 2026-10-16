@@ -1,0 +1,45 @@
+# Build the database once (and again to refresh it):
+#   docker compose --profile etl run --rm etl
+# Start the app:
+#   docker compose up -d
+name: macro-translator
+
+x-common: &common
+  build: .
+  image: macro-translator:local
+  env_file:
+    - path: .env
+      required: false
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  etl:
+    <<: *common
+    profiles: ["etl"]
+    command: ["python", "etl/build_db.py"]
+    volumes:
+      - ${DATA_VOLUME:-macro-data}:/data
+
+  app:
+    <<: *common
+    restart: unless-stopped
+    ports:
+      # 127.0.0.1 by default: only this machine. BIND_ADDRESS=0.0.0.0 opens it to the LAN.
+      - "${BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8000}:8000"
+    volumes:
+      - ${DATA_VOLUME:-macro-data}:/data:ro
+    extra_hosts:
+      # Lets the container reach an LLM server on the host (LM Studio, Ollama, llama.cpp).
+      - "host.docker.internal:host-gateway"
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_PORT: "8000"
+
+volumes:
+  macro-data:

@@ -191,9 +191,10 @@ def _read_meta(path: Path) -> dict | None:
         return None
 
 
-def _from_meta(meta: dict) -> Download:
+def _from_meta(meta: dict, dest: Path) -> Download:
+    """Cached download facts. The path is where the file is now (host or container)."""
     fields = {k: meta.get(k) for k in Download.__dataclass_fields__}
-    return Download(**(fields | {"path": Path(meta["path"])}))
+    return Download(**(fields | {"path": dest}))
 
 
 def _clean_etag(value: str | None) -> str | None:
@@ -223,7 +224,7 @@ def download(client: httpx.Client | None, url: str, dest: Path, force: bool = Fa
         if cached is None:
             raise SystemExit(f"Offline mode, but there is no cached copy of {url} at {dest}")
         log.info("offline: use cached %s (downloaded %s)", dest.name, cached["downloaded_at"])
-        return _from_meta(cached)
+        return _from_meta(cached, dest)
 
     try:
         head = client.head(url, follow_redirects=True)
@@ -241,18 +242,25 @@ def download(client: httpx.Client | None, url: str, dest: Path, force: bool = Fa
     except httpx.HTTPError as exc:
         if cached is not None:
             log.warning("cannot reach %s (%s). Use the cached copy.", url, exc)
-            return _from_meta(cached)
+            return _from_meta(cached, dest)
         raise
 
     if cached is not None and not force:
+        # Some servers (FDC) run several backends with different ETags for the
+        # same file. Size plus Last-Modified is then a good enough match.
         same = (
             (sha256 and sha256 == cached.get("sha256"))
             or (etag and etag == cached.get("etag"))
-            or (not etag and size and size == cached.get("size"))
+            or (
+                size
+                and size == cached.get("size")
+                and last_modified
+                and last_modified == cached.get("last_modified")
+            )
         )
         if same and dest.stat().st_size == cached.get("size"):
             log.info("cache is current: %s (downloaded %s)", dest.name, cached["downloaded_at"])
-            return _from_meta(cached)
+            return _from_meta(cached, dest)
 
     part = dest.with_name(dest.name + ".part")
     part_meta = _read_meta(part) or {}
@@ -310,7 +318,7 @@ def download(client: httpx.Client | None, url: str, dest: Path, force: bool = Fa
         size=got,
         sha256=sha256,
     )
-    meta = asdict(info) | {"path": str(dest)}
+    meta = asdict(info) | {"path": dest.name}
     _meta_path(dest).write_text(json.dumps(meta, indent=2))
     return info
 

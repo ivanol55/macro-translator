@@ -38,6 +38,8 @@ def create_app(
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     if settings.debug:
         logging.getLogger("macro_translator").setLevel(logging.DEBUG)
+    else:
+        logging.getLogger("httpx").setLevel(logging.WARNING)
     llm = llm or LLMClient(settings)
     db = db or FoodDB(settings.db_path)
 
