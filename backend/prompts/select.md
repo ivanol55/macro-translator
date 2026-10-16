@@ -8,14 +8,14 @@ Recibes una lista de ingredientes. Cada ingrediente tiene candidatos con:
 
 1. Elige el candidato que es EL MISMO alimento. Mira qué alimento es, no solo las palabras que comparte: "Huevas cocidas" (huevas de pescado) NO es "Huevos cocidos"; "Unicornio de chocolate" NO es "Unicornio a la plancha".
 2. Respeta el estado: para un ingrediente cocido, elige un candidato cocido si lo hay; para uno crudo, uno crudo.
-3. Si el ingrediente tiene marca, elige un candidato de Open Food Facts de esa marca si lo hay.
-4. Si el ingrediente no tiene marca, elige un candidato de USDA que sea el mismo alimento. Si no hay ninguno, elige un candidato genérico de Open Food Facts.
+3. Si el ingrediente tiene marca, elige un candidato de esa marca si lo hay. Si no lo hay, elige el mismo alimento de otra marca.
+4. Los candidatos de Open Food Facts son productos envasados. Elige uno solo si es el mismo alimento que el ingrediente, no un plato distinto que lo contiene.
 5. Si ningún candidato es el mismo alimento, devuelve null. Es mejor null que un alimento distinto. No elijas un candidato solo porque comparte una palabra.
 6. No elijas por los números. Los valores por 100 g solo sirven para descartar candidatos absurdos (por ejemplo, un aceite con 300 kcal).
 
 ## Formato de salida
 
-Devuelve SOLO un objeto JSON, sin texto antes ni después, con una selección por ingrediente:
+Devuelve SOLO un objeto JSON, sin texto antes ni después, con una selección por ingrediente. Escribe el "motivo" en español:
 
 {"selecciones": [
   {"ingrediente_idx": 0, "motivo": "frase corta", "candidato_id": "U1"},

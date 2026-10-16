@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f6f7f4" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#151816" media="(prefers-color-scheme: dark)">
+  <title>Macro Translator</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f7d4f'/%3E%3Cpath d='M8 22V10l8 7 8-7v12' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Macro Translator</h1>
+      <p class="sub">Escribe lo que has comido. La IA interpreta el texto y elige el alimento; el programa hace todas las cuentas.</p>
+    </header>
+
+    <form id="form" autocomplete="off">
+      <label for="texto" class="visually-hidden">Qué has comido</label>
+      <textarea id="texto" name="texto" rows="6" maxlength="2000" required
+        placeholder="Ej.: sepia Hacendado, el paquete de 403 g. Algo de aceite de oliva en la sartén. Huevos cocidos, 2, 130 g"></textarea>
+      <div class="form-row">
+        <span id="contador" class="muted" aria-live="polite">0 / 2000</span>
+        <button id="calcular" type="submit">Calcular</button>
+      </div>
+    </form>
+
+    <div id="cargando" class="cargando" hidden role="status" aria-live="polite">
+      <span class="spinner" aria-hidden="true"></span>
+      <span>Calculando… <span id="segundos">0</span> s</span>
+    </div>
+
+    <div id="error" class="error" hidden role="alert"></div>
+
+    <section id="resultado" hidden aria-label="Resultado">
+      <div class="tabla-wrap">
+        <table id="tabla">
+          <thead>
+            <tr>
+              <th scope="col">Ingrediente</th>
+              <th scope="col" class="num"><span class="largo">Cantidad</span><span class="corto" aria-hidden="true">Cant.</span></th>
+              <th scope="col" class="num">Kcal</th>
+              <th scope="col" class="num">Prot</th>
+              <th scope="col" class="num"><span class="largo">Carbs</span><span class="corto" aria-hidden="true">Carb</span></th>
+              <th scope="col" class="num"><span class="largo">Grasas</span><span class="corto" aria-hidden="true">Gras</span></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+          <tfoot></tfoot>
+        </table>
+      </div>
+      <div class="acciones">
+        <button id="copiar" type="button" class="secundario">Copiar</button>
+        <span id="copiado" class="copiado" hidden aria-live="polite">Copiado</span>
+      </div>
+      <div id="avisos" class="avisos"></div>
+      <div id="detalles" class="detalles"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      Contiene información de <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a>,
+      disponible bajo la <a href="https://opendatacommons.org/licenses/odbl/1.0/" target="_blank" rel="noopener">Open Database License (ODbL)</a>.
+      Datos de <a href="https://fdc.nal.usda.gov/" target="_blank" rel="noopener">USDA FoodData Central</a>.
+    </p>
+    <p id="fechas" class="muted">Datos: cargando…</p>
+    <p class="muted">
+      <a href="https://github.com/ivanol55/macro-translator" target="_blank" rel="noopener">Código (MIT) y método de generación de la base de datos</a>.
+      Valores orientativos: no sustituyen el consejo de un profesional.
+    </p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

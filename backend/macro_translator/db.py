@@ -16,6 +16,11 @@ from .models import Candidato
 POOL = 40
 # Words that the USDA index needs for the state of the food.
 ESTADO_EN = {"crudo": "raw", "cocido": "cooked"}
+# Re-ranking weights for Open Food Facts, on top of the BM25 score.
+W_POPULARIDAD = 0.15  # x ln(1 + unique scans)
+W_MARCA = 2.0  # the brand the user wrote is in the product brands
+W_PRECISION = 2.0  # x share of the product-name words that are in the query
+STOPWORDS_ES = {"de", "del", "la", "el", "los", "las", "en", "y", "a", "al", "con", "un", "una"}
 
 
 class DatabaseMissing(RuntimeError):
@@ -29,6 +34,21 @@ def _norm(text: str) -> str:
 
 def _words(text: str) -> set[str]:
     return set(re.findall(r"[a-z0-9]+", _norm(text)))
+
+
+def _singular(word: str) -> str:
+    return word[:-1] if len(word) > 3 and word.endswith("s") else word
+
+
+def precision(nombre: str, query: str) -> float:
+    """Share of the product-name words that the query contains (0..1).
+
+    It moves plain products ("Griego") above variants with extra words
+    ("Yogur griego stracciatella") when the user did not write those words.
+    """
+    q = {_singular(w) for w in _words(query)}
+    n = {_singular(w) for w in _words(nombre) - STOPWORDS_ES}
+    return len(n & q) / len(n) if n else 0.0
 
 
 class FoodDB:
@@ -104,7 +124,8 @@ class FoodDB:
         seen: set[tuple] = set()
         out = []
         for r in rows:
-            key = (_norm(r[2]), _norm(r[3] or ""), r[5], r[6], r[7], r[8])
+            # Same name and same values = same food for the user, also with another brand.
+            key = (_norm(r[2]), r[5], r[6], r[7], r[8])
             if key in seen:
                 continue
             seen.add(key)
@@ -119,9 +140,9 @@ class FoodDB:
         marca_words = _words(marca or "")
 
         def score(r: tuple) -> float:
-            s = r[9] + 0.15 * math.log1p(r[10] or 0)
+            s = r[9] + W_POPULARIDAD * math.log1p(r[10] or 0) + W_PRECISION * precision(r[2], query)
             if marca_words and marca_words & _words(r[3] or ""):
-                s += 2.0
+                s += W_MARCA
             return s
 
         rows.sort(key=score, reverse=True)

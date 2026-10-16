@@ -70,11 +70,15 @@ def necesita_bd(ing: Ingrediente) -> bool:
     return ing.valores_usuario_100g is None or not ing.valores_usuario_100g.completos()
 
 
-def buscar(db: FoodDB, ing: Ingrediente) -> list[Candidato]:
+def buscar(db: FoodDB, ing: Ingrediente) -> tuple[list[Candidato], list[Candidato]]:
+    """Return (preferred, fallback) candidates.
+
+    Branded food: Open Food Facts first. Generic food: USDA first. The LLM sees
+    the fallback source only when nothing in the preferred source is the same food.
+    """
     off = db.buscar_off(ing.nombre_es, ing.marca)
     usda = db.buscar_usda(ing.nombre_en, ing.estado)
-    # Branded food: Open Food Facts first. Generic food: USDA first.
-    return off + usda if ing.marca else usda + off
+    return (off, usda) if ing.marca else (usda, off)
 
 
 # --------------------------------------------------------------------------- #
@@ -93,7 +97,9 @@ def texto_seleccion(ingredientes: list[Ingrediente], candidatos: dict[int, list[
             f"marca: {ing.marca or 'ninguna'}; estado: {ing.estado}"
         )
         for c in cands:
-            fuente = "Open Food Facts" if c.fuente == "OFF" else "USDA"
+            fuente = (
+                "Open Food Facts (producto envasado)" if c.fuente == "OFF" else "USDA (genérico)"
+            )
             partes.append(
                 f"- {c.clave} | {fuente} | {c.nombre} | marca: {c.marca or '-'} | por 100 g: "
                 f"{_num(c.kcal)} kcal, prot {_num(c.prot)} g, hidratos {_num(c.carbs)} g, "
@@ -127,14 +133,12 @@ def esquema_seleccion(candidatos: dict[int, list[Candidato]]) -> dict:
     }
 
 
-def seleccionar(
+def _seleccionar_ronda(
     ingredientes: list[Ingrediente],
     candidatos: dict[int, list[Candidato]],
     llm: LLMClient,
     prompts: Prompts,
 ) -> dict[int, tuple[Candidato | None, str]]:
-    if not candidatos:
-        return {}
     res = llm.chat_json(
         prompts.select,
         texto_seleccion(ingredientes, candidatos),
@@ -148,6 +152,28 @@ def seleccionar(
     for s in res.selecciones:
         cand = next((c for c in candidatos[s.ingrediente_idx] if c.clave == s.candidato_id), None)
         out[s.ingrediente_idx] = (cand, s.motivo.strip())
+    return out
+
+
+def seleccionar(
+    ingredientes: list[Ingrediente],
+    candidatos: dict[int, tuple[list[Candidato], list[Candidato]]],
+    llm: LLMClient,
+    prompts: Prompts,
+) -> dict[int, tuple[Candidato | None, str]]:
+    """Round 1: the preferred source. Round 2: the other source, only for null answers."""
+    ronda1 = {i: pref or alt for i, (pref, alt) in candidatos.items() if pref or alt}
+    out = _seleccionar_ronda(ingredientes, ronda1, llm, prompts) if ronda1 else {}
+    ronda2 = {
+        i: alt
+        for i, (pref, alt) in candidatos.items()
+        if pref and alt and i in out and out[i][0] is None
+    }
+    if ronda2:
+        for i, (cand, motivo) in _seleccionar_ronda(ingredientes, ronda2, llm, prompts).items():
+            if cand is None and motivo != out[i][1]:
+                motivo = f"{out[i][1]} / {motivo}".strip(" /")
+            out[i] = (cand, motivo)
     return out
 
 
@@ -226,12 +252,7 @@ def totalizar(filas: list[Fila]) -> Resultado:
 # --------------------------------------------------------------------------- #
 def calcular(texto: str, llm: LLMClient, db: FoodDB, prompts: Prompts) -> Resultado:
     ingredientes = interpretar(texto, llm, prompts)
-    candidatos: dict[int, list[Candidato]] = {}
-    for idx, ing in enumerate(ingredientes):
-        if necesita_bd(ing):
-            cands = buscar(db, ing)
-            if cands:
-                candidatos[idx] = cands
+    candidatos = {i: buscar(db, ing) for i, ing in enumerate(ingredientes) if necesita_bd(ing)}
     elecciones = seleccionar(ingredientes, candidatos, llm, prompts)
     filas = [construir_fila(ing, elecciones.get(i)) for i, ing in enumerate(ingredientes)]
     return totalizar(filas)
