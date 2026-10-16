@@ -3,8 +3,8 @@
 El informe del benchmark marca 46 casos con `needs_review`. Aquí está cada caso, el
 cambio que propongo y el motivo. Marca `[x]` en la casilla para aprobar.
 
-Resumen: 46 casos. 43 se mantienen. 3 necesitan un cambio: 2 por las reglas nuevas de
-la fase 1 (`eti-003`, `eti-008`) y 1 por un rango imposible (`rui-009`).
+Resumen: 46 casos revisados. 43 se mantienen y 3 se han cambiado con tu aprobación:
+`eti-003` y `eti-008` (reglas nuevas de la fase 1) y `rui-009` (rango imposible).
 
 Leyenda: **Caso** es lo que hoy espera el fichero. **Cambio** es mi propuesta.
 
@@ -15,8 +15,8 @@ fuente".
 
 | Aprobado | id | Caso actual | Cambio propuesto | Motivo |
 |---|---|---|---|---|
-| [ ] | `eti-003` | Yogur griego 125 g con etiqueta parcial (100 kcal, 9 g proteína): espera mezclar esos dos con hidratos y grasa de la BD, con `label_priority`. | Esperar los cuatro valores de la BD y el aviso `Valores de etiqueta ignorados`. Quitar `label_priority`. | Una etiqueta sin los cuatro valores se descarta: ya no hay mezcla etiqueta + BD. |
-| [ ] | `eti-008` | Pizza 100 g, etiqueta incoherente (400 kcal con 2/3/3 g): espera usar la etiqueta y avisar. | Esperar los valores de la BD y el aviso `Valores de etiqueta ignorados`. Quitar `label_priority`. | Una etiqueta incoherente (Atwater 47 kcal contra 400) se descarta, no se usa. |
+| [x] | `eti-003` | Yogur griego 125 g con etiqueta parcial (100 kcal, 9 g proteína): esperaba mezclar esos dos con hidratos y grasa de la BD, con `label_priority`. | **Aplicado.** Ahora espera los valores de la BD y quita `label_priority`. | Una etiqueta sin los cuatro valores se descarta: ya no hay mezcla etiqueta + BD. |
+| [x] | `eti-008` | Pizza 100 g, etiqueta incoherente (400 kcal con 2/3/3 g): esperaba usar la etiqueta y avisar. | **Aplicado.** Ahora espera los valores de la BD y quita `label_priority`. | Una etiqueta incoherente (Atwater 47 kcal contra 400) se descarta, no se usa. |
 
 ## 2. Compuestos (`compuestos`) — mantener
 
@@ -86,7 +86,7 @@ esperado.
 | [ ] | `rui-003` | Mezcla español/inglés. | Mantener. | Debe parsear igual. |
 | [ ] | `rui-007` | Coma decimal: 62,5 g de avena. | Mantener. | La coma decimal es válida. |
 | [ ] | `rui-008` | "2 tostadas de 30 g cada una" → 60 g. | Mantener. | Es por pieza: 2 × 30 g. |
-| [ ] | `rui-009` | "un poco de arroz, como 200 g", rango **-130**–800 kcal. | Subir el límite inferior a 0. | La energía no puede ser negativa. |
+| [x] | `rui-009` | "un poco de arroz, como 200 g", rango **-130**–800 kcal. | **Aplicado.** Límites negativos subidos a 0 en kcal y macros. | La energía no puede ser negativa. |
 | [ ] | `rui-010` | Espacios de más. | Mantener. | Debe parsear igual. |
 
 ## 8. Variantes (`variantes`) — mantener
