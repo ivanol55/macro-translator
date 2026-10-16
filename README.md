@@ -147,6 +147,29 @@ The "Copiar" button works on plain HTTP too: the page uses a fallback when
 > only on a network that you trust. For the internet, put it behind a reverse proxy with
 > HTTPS and authentication, and read the obligations in [DATA_LICENSES.md](DATA_LICENSES.md).
 
+## Settings for one machine
+
+Put the changes for one machine in `docker-compose.override.yml` next to `docker-compose.yml`.
+Docker Compose reads it automatically, and git ignores it. Example: the app joins the Docker
+network of an LLM stack on the same host, and shows on a Homepage dashboard.
+
+```yaml
+services:
+  app:
+    labels:
+      homepage.group: Containers
+      homepage.name: Macro Translator
+      homepage.icon: mdi-food-apple
+      homepage.href: http://192.168.1.50:8000
+    networks: [default, llm]
+networks:
+  llm:
+    name: local-ai_default   # the network of the LLM stack
+    external: true
+```
+
+Then set `LLM_BASE_URL=http://llama:8080/v1` (the container name of the LLM server).
+
 ## Refresh the data
 
 Run the ETL again. It downloads only the files that changed, then builds the database from

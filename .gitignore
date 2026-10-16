@@ -25,3 +25,6 @@ __pycache__/
 
 # Local tool settings
 .claude/
+
+# Local Docker Compose changes for one machine (labels, networks)
+docker-compose.override.yml
