@@ -1,0 +1,37 @@
+# Copy to bench/models.yaml and edit. bench/models.yaml is git-ignored.
+#
+# One entry per model you want to measure. The harness calls the same backend
+# functions as the app (LLMClient / FoodDB / pipeline.calcular), once per entry.
+#
+# Fields:
+#   name          label used in the result files and the report
+#   base_url      OpenAI-compatible endpoint (no trailing /v1 is fine: /v1 is used)
+#   model         model name sent to the endpoint
+#   api_key_env   name of the environment variable with the key (preferred)
+#   api_key       literal key (avoid: do not commit secrets)
+#   response_format  auto | json_schema | json_object | none  (default auto)
+#   extra_body    JSON string added to every request (optional), e.g. thinking off
+#   temperature   default 0
+#   timeout       seconds per request, default 180
+#   max_retries   0-2, default 2
+#
+# Values may be quoted with single or double quotes.
+
+models:
+  - name: local-qwen
+    base_url: http://127.0.0.1:8080/v1
+    model: qwen3.5-9b
+    api_key_env: LLM_API_KEY
+    response_format: auto
+    extra_body: '{"chat_template_kwargs":{"enable_thinking":false}}'
+    temperature: 0
+    timeout: 180
+    max_retries: 2
+
+  - name: hosted-reference
+    base_url: https://api.openai.com/v1
+    model: gpt-5-mini
+    api_key_env: OPENAI_API_KEY
+    response_format: auto
+    timeout: 120
+    max_retries: 2
