@@ -11,7 +11,7 @@ from conftest import (
     ingrediente,
 )
 from macro_translator.models import Candidato, Ingrediente
-from macro_translator.pipeline import Eleccion, calcular, construir_fila
+from macro_translator.pipeline import Eleccion, buscar, calcular, construir_fila
 
 REL = 0.02  # the acceptance tolerance: ±2 %
 
@@ -234,6 +234,30 @@ def test_no_usda_hit_goes_straight_to_off(settings, food_db, prompts):
     res, fake = run(settings, food_db, prompts, interp, {"Salmorejo": "Salmorejo"})
     assert len(fake.selection_inputs) == 1
     assert res.filas[0].origen.tipo == "OFF"
+
+
+def test_generic_food_drops_a_snack_presentation(food_db):
+    # "La barrita del unicornio" is a packaged snack. A generic "unicornio" is not
+    # that snack, so the candidate never reaches the LLM.
+    ing = _ing(nombre_es="Unicornio", nombre_en="unicornio", marca=None)
+    pref, alt = buscar(food_db, ing, "unicornio")
+    nombres = [c.nombre for c in pref + alt]
+    assert "Unicornio" in nombres
+    assert "La barrita del unicornio" not in nombres
+
+
+def test_branded_food_keeps_a_snack_presentation(food_db):
+    # With a brand the user asked for the packaged product: the snack stays.
+    ing = _ing(nombre_es="Unicornio", nombre_en="unicornio", marca="Cautiva")
+    pref, alt = buscar(food_db, ing, "unicornio Cautiva")
+    assert "La barrita del unicornio" in [c.nombre for c in pref + alt]
+
+
+def test_user_snack_word_keeps_the_candidate(food_db):
+    # The user names the snack form, so the candidate is the same food.
+    ing = _ing(nombre_es="Barrita de unicornio", nombre_en="unicornio bar", marca=None)
+    pref, alt = buscar(food_db, ing, "barrita de unicornio")
+    assert "La barrita del unicornio" in [c.nombre for c in pref + alt]
 
 
 def test_partial_label_values_are_discarded_and_come_from_the_database(settings, food_db, prompts):

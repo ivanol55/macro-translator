@@ -6,6 +6,7 @@ import pytest
 from macro_translator.atributos import (
     compatible_con_texto,
     es_espurio,
+    es_otra_presentacion,
     filtrar_supuestos,
     limpiar_marca,
     limpiar_motivo_espurio,
@@ -271,3 +272,24 @@ def test_yogur_y_queso_declaran_por_sus_valores():
     assert supuestos_del_valor("queso curado", cand("Queso Curado", "OFF", grasas=40), []) == [
         "Queso: el producto elegido tiene 40 g de grasa/100 g"
     ]
+
+
+# --------------------------------------------------------------------------- #
+# Presentation: a packaged snack is not a generic dish
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    ("nombre", "texto", "otra"),
+    [
+        ("Patatas fritas de bolsa", "patatas fritas, 150 g", True),
+        ("Snacks, potato chips, plain, salted", "patatas fritas", True),
+        ("Palomitas", "maíz", True),
+        ("La barrita del unicornio", "unicornio", True),
+        # The user names the snack form: the candidate holds.
+        ("Patatas fritas de bolsa", "patatas fritas de bolsa, 50 g", False),
+        # No snack word: a plain dish is never dropped here.
+        ("Patatas fritas", "patatas fritas, 150 g", False),
+        ("Huevos cocidos", "huevos cocidos", False),
+    ],
+)
+def test_otra_presentacion(nombre, texto, otra):
+    assert es_otra_presentacion(nombre, texto) is otra

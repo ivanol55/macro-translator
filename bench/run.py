@@ -282,8 +282,8 @@ def run_once(texto, llm: RecordingLLM, db: FoodDB, prompts: Prompts) -> dict:
         captured["ingredientes"] = [i.model_dump(mode="json") for i in out]
         return out
 
-    def buscar_wrap(d, ing):
-        pref, alt = orig[1](d, ing)
+    def buscar_wrap(d, ing, texto=""):
+        pref, alt = orig[1](d, ing, texto)
         captured.setdefault("buscar", []).append(
             {
                 "id": id(ing),

@@ -13,7 +13,7 @@ Recibes una lista de ingredientes. Cada ingrediente tiene candidatos con:
 3. Si el ingrediente tiene marca, elige un candidato de esa marca si lo hay. Si no lo hay, elige el mismo alimento de otra marca.
 4. Los candidatos de Open Food Facts son productos envasados. Un producto vale si es el mismo alimento o el mismo plato ("Salmorejo fresco" para "Salmorejo", "Huevos cocidos" para "Huevos cocidos"). No vale un plato distinto que solo contiene el ingrediente ("Atún con tomate" para "Tomate").
 5. Si ningún candidato es el mismo alimento, devuelve null. Es mejor null que un alimento distinto. No elijas un candidato solo porque comparte una palabra.
-6. Si el usuario no dice un sabor ni una variante, el ingrediente es la versión natural o básica. Un candidato natural ("natural", "plain", o solo el nombre del producto, como "GRIEGO" para "Yogur griego") es el mismo alimento. Los candidatos con sabor (stracciatella, fresa, cacao) no lo son.
+6. Si el usuario no dice un sabor ni una variante, el ingrediente es la versión natural o básica. Un candidato natural ("natural", "plain", o solo el nombre del producto, como "GRIEGO" para "Yogur griego") es el mismo alimento. Los candidatos con sabor (stracciatella, fresa, cacao) no lo son. Tampoco cambies la presentación: si el usuario no dice "de bolsa", "snack", "aperitivo", "chips" ni "barrita", un aperitivo envasado no es el plato genérico.
 7. No elijas por los números. Los valores por 100 g solo sirven para descartar candidatos absurdos (por ejemplo, un aceite con 300 kcal).
 
 ## Supuestos de la elección

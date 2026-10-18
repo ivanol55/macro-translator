@@ -195,6 +195,20 @@ def es_formato(texto: str) -> bool:
     return any(_contiene(texto, palabra) for palabra in FORMATO)
 
 
+# Packaging and snack words. A packaged product with one of these words is a
+# different food from a generic dish: "Patatas fritas de bolsa" (a snack) is not
+# "patatas fritas" (a cooked dish). The word only holds when the user writes the
+# snack form too.
+PRESENTACION = ("bolsa", "snack", "aperitivo", "chips", "ganchitos", "palomitas", "barrita")
+
+
+def es_otra_presentacion(nombre: str, texto: str) -> bool:
+    """True when a product adds a snack word that the text does not have."""
+    return any(
+        _contiene(nombre, palabra) and not _contiene(texto, palabra) for palabra in PRESENTACION
+    )
+
+
 def valor_en_texto(texto: str, grupo: Grupo) -> int | None:
     """Index of the value the user fixed, or None when the text does not say."""
     for i, valor in enumerate(grupo.valores):

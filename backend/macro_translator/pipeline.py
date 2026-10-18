@@ -134,14 +134,23 @@ def necesita_bd(ing: Ingrediente) -> bool:
     return ing.valores_usuario_100g is None or not ing.valores_usuario_100g.completos()
 
 
-def buscar(db: FoodDB, ing: Ingrediente) -> tuple[list[Candidato], list[Candidato]]:
+def buscar(
+    db: FoodDB, ing: Ingrediente, texto: str = ""
+) -> tuple[list[Candidato], list[Candidato]]:
     """Return (preferred, fallback) candidates.
 
     Branded food: Open Food Facts first. Generic food: USDA first. The LLM sees
     the fallback source only when nothing in the preferred source is the same food.
+
+    A generic food drops the packaged snacks of the fallback: "Patatas fritas de
+    bolsa" (a snack) is not the same food as "patatas fritas" (a cooked dish). The
+    snack word only holds when the user writes it too.
     """
     off = db.buscar_off(ing.nombre_es, ing.marca)
     usda = db.buscar_usda(ing.nombre_en, ing.estado)
+    if not ing.marca:
+        usuario = texto or ing.nombre_es
+        off = [c for c in off if not atributos.es_otra_presentacion(c.nombre, usuario)]
     return (off, usda) if ing.marca else (usda, off)
 
 
@@ -402,7 +411,9 @@ def totalizar(filas: list[Fila]) -> Resultado:
 # --------------------------------------------------------------------------- #
 def calcular(texto: str, llm: LLMClient, db: FoodDB, prompts: Prompts) -> Resultado:
     ingredientes = interpretar(texto, llm, prompts)
-    candidatos = {i: buscar(db, ing) for i, ing in enumerate(ingredientes) if necesita_bd(ing)}
+    candidatos = {
+        i: buscar(db, ing, texto) for i, ing in enumerate(ingredientes) if necesita_bd(ing)
+    }
     elecciones = seleccionar(ingredientes, candidatos, llm, prompts)
     filas = [construir_fila(ing, elecciones.get(i), texto) for i, ing in enumerate(ingredientes)]
     return totalizar(filas)
