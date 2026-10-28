@@ -314,7 +314,10 @@ LIVE_LLM=1 DB_PATH=data/macros.duckdb LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   LLM_MODEL=qwen3.5-9b uv run pytest tests/test_live_llm.py
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Before optimizing latency, read
+[`bench/FAILED_EXPERIMENTS.md`](bench/FAILED_EXPERIMENTS.md): per-ingredient parallel
+selection, speculative round 2, short JSON keys and short motives were measured and
+rejected on the current single-GPU architecture.
 
 ## Licences
 

@@ -44,6 +44,15 @@ edit them while the app runs.
 
 3. Write in the pull request which models you used and the result.
 
+## Performance
+
+Before changing the pipeline for speed, read
+[`bench/FAILED_EXPERIMENTS.md`](bench/FAILED_EXPERIMENTS.md). Per-ingredient parallel
+selection, speculative round 2, short JSON keys and short motives were measured and
+rejected on the current single-GPU architecture. Do not retry them without a substantial
+change: several GPUs or servers, a different runtime, or a model validated with the full
+benchmark.
+
 ## Change the ETL
 
 - `etl/build_db.py` is the documented method that makes the derivative database (ODbL).

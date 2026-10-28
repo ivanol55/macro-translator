@@ -15,7 +15,17 @@ No arregla nada de la app: mide, documenta los fallos y propone arreglos.
 | `run.py` | Ejecuta cada caso por el pipeline real y guarda las trazas. |
 | `report.py` | Calcula métricas y genera `REPORT.md`. |
 | `REPORT.md` | Informe con tablas, peores fallos, modos de fallo y propuestas. |
+| `PERF_COMPARISON.md` | Informe histórico de los cuatro experimentos de rendimiento. |
+| `FAILED_EXPERIMENTS.md` | Por qué fallaron y cuándo no reintentarlos. |
 | `results/` | Salidas crudas por ejecución (no se commitea). |
+
+## Antes de optimizar el pipeline
+
+Lee [`FAILED_EXPERIMENTS.md`](FAILED_EXPERIMENTS.md). La selección por ingrediente en
+paralelo, la ronda 2 especulativa, las claves JSON cortas y el `motivo` corto ya se
+probaron y se descartaron en esta arquitectura (una GPU). No los reintentes sin un cambio
+sustancial: varias GPU o servidores, otro runtime o un modelo validado con el bench
+completo.
 
 ## Ejecutar
 
