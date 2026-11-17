@@ -29,6 +29,34 @@ def test_number_in_the_text_is_accepted():
     assert r.ok and r.cantidad is None
 
 
+def test_the_unit_in_the_text_wins_over_the_model():
+    # The model read "6g" as millilitres (oil density would give 5.5 g): the text says grams.
+    r = unidades.reconstruible(ing(6, "ml", nombre_es="aceite de oliva"), "6g aceite de oliva")
+    assert r.ok
+    assert (r.cantidad, r.unidad) == (6, "g")
+    assert "Unidad del texto usada" in r.motivo
+
+
+def test_the_unit_in_the_text_wins_inside_a_list():
+    texto = "- 125g mozzarella light hacendado\n- 6g aceite de oliva"
+    r = unidades.reconstruible(ing(6, "ml", nombre_es="aceite de oliva"), texto)
+    assert r.ok
+    assert (r.cantidad, r.unidad) == (6, "g")
+
+
+def test_the_same_number_in_two_units_keeps_the_unit_near_the_food():
+    texto = "6 g de sal y 6 ml de aceite de oliva"
+    assert unidades.reconstruible(ing(6, "g", nombre_es="sal"), texto).unidad is None
+    assert unidades.reconstruible(ing(6, "ml", nombre_es="aceite de oliva"), texto).unidad is None
+
+
+def test_a_weight_in_the_text_brings_its_unit():
+    # "1,5 kg" is not 1.5 g: the number and the unit of the text go together.
+    r = unidades.reconstruible(ing(1500), "1,5 kg de pollo")
+    assert r.ok
+    assert (r.cantidad, r.unidad) == (1.5, "kg")
+
+
 def test_decimal_comma_matches_decimal_point():
     r = unidades.reconstruible(ing(0.5), "0,5 g de algo")
     assert r.ok

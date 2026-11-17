@@ -7,7 +7,8 @@ invented a value or followed an instruction inside the text ("multiply by 100").
 
 The check accepts a quantity when one of these is true:
 
-1. The number appears literally in the text, with its unit.
+1. The number appears literally in the text, with its unit. That unit wins:
+   "6g de aceite" is grams even if the model read it as "6 ml".
 2. The unit is a known conversion: ml -> g, cucharada, cucharadita, chorrito.
 3. The number comes from a package weight: "el paquete entero de 403 g" (403),
    "medio paquete de 250 g" (125).
@@ -109,10 +110,11 @@ def cantidades_masa(texto: str) -> list[tuple[float, str, int]]:
 
 @dataclass
 class Reconstruccion:
-    """The result of the check. `cantidad` is a correction, or None to keep it."""
+    """The result of the check. `cantidad` and `unidad` are corrections, or None to keep them."""
 
     ok: bool
     cantidad: float | None = None
+    unidad: str | None = None
     motivo: str | None = None
 
 
@@ -124,21 +126,41 @@ def _peso_paquete(texto: str) -> float | None:
     return pesos[0] if pesos else None
 
 
-def _cantidad_mas_cercana(texto: str, nombre: str, cantidad: float) -> float | None:
-    """The explicit weight of the text nearest the food name."""
+def _pos_nombre(texto: str, nombre: str) -> int:
+    """Position in the text of the first long word of the food name, or -1."""
+    for palabra in re.findall(r"[a-z]+", _norm(nombre)):
+        if len(palabra) > 2:
+            idx = _norm(texto).find(palabra)
+            if idx >= 0:
+                return idx
+    return -1
+
+
+def _unidad_en_texto(texto: str, nombre: str, cantidad: float, unidad: str) -> str | None:
+    """The unit the text writes next to this number, when it is not the model's unit.
+
+    None means "keep the model's unit": the text gives no unit, or it gives the
+    same one elsewhere ("6 g de sal y 6 ml de aceite" keeps both).
+    """
+    iguales = [c for c in cantidades_masa(texto) if _igual(c[0], cantidad)]
+    if not iguales or any(c[1] == unidad for c in iguales):
+        return None
+    pos = _pos_nombre(texto, nombre)
+    if pos < 0:
+        return iguales[0][1]
+    return min(iguales, key=lambda c: abs(c[2] - pos))[1]
+
+
+def _cantidad_mas_cercana(texto: str, nombre: str) -> tuple[float, str] | None:
+    """The explicit "<number> <unit>" of the text nearest the food name."""
     cantidades = cantidades_masa(texto)
     if not cantidades:
         return None
-    palabras = [p for p in re.findall(r"[a-z]+", _norm(nombre)) if len(p) > 2]
-    pos = -1
-    for palabra in palabras:
-        idx = _norm(texto).find(palabra)
-        if idx >= 0:
-            pos = idx
-            break
+    pos = _pos_nombre(texto, nombre)
     if pos < 0:
-        return cantidades[0][0]
-    return min(cantidades, key=lambda c: abs(c[2] - pos))[0]
+        return cantidades[0][0], cantidades[0][1]
+    valor, unidad, _ = min(cantidades, key=lambda c: abs(c[2] - pos))
+    return valor, unidad
 
 
 def reconstruible(ing: IngredienteLLM, texto: str) -> Reconstruccion:
@@ -153,9 +175,23 @@ def reconstruible(ing: IngredienteLLM, texto: str) -> Reconstruccion:
     unidad = ing.unidad
     cantidad = ing.cantidad
 
-    # 1. The number appears literally in the text.
+    # 1. The number appears literally in the text, next to its unit.
     if _en_texto(cantidad, texto):
-        return Reconstruccion(ok=True)
+        # The unit in the text wins: "6g" is grams even if the model said "6 ml".
+        en_texto = None
+        if unidad in UNIDADES_MASA or unidad in UNIDADES_VOLUMEN:
+            en_texto = _unidad_en_texto(texto, ing.nombre_es, cantidad, unidad)
+        if en_texto is None:
+            return Reconstruccion(ok=True)
+        return Reconstruccion(
+            ok=True,
+            cantidad=cantidad,
+            unidad=en_texto,
+            motivo=(
+                f"Unidad del texto usada: {cantidad:g} {en_texto} "
+                f"(el modelo devolvió {cantidad:g} {unidad})"
+            ),
+        )
 
     # 2. A known unit, written as a word without a number ("una cucharada", "algo de").
     if unidad in UNIDADES_CUCHARA:
@@ -174,15 +210,18 @@ def reconstruible(ing: IngredienteLLM, texto: str) -> Reconstruccion:
     if any(_igual(cantidad, n) for n in declarados):
         return Reconstruccion(ok=True)
 
-    # 5. A mass or volume unit with an explicit weight in the text: use it.
+    # 5. A mass or volume unit with an explicit weight in the text: use it, with its unit.
     if unidad in UNIDADES_MASA or unidad in UNIDADES_VOLUMEN:
-        peso = _cantidad_mas_cercana(texto, ing.nombre_es, cantidad)
-        if peso is not None:
+        cerca = _cantidad_mas_cercana(texto, ing.nombre_es)
+        if cerca is not None:
+            peso, en_texto = cerca
             return Reconstruccion(
                 ok=True,
                 cantidad=peso,
+                unidad=en_texto,
                 motivo=(
-                    f"Cantidad del texto usada: {peso:g} {unidad} (el modelo devolvió {cantidad:g})"
+                    f"Cantidad del texto usada: {peso:g} {en_texto} "
+                    f"(el modelo devolvió {cantidad:g} {unidad})"
                 ),
             )
 

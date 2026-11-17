@@ -356,6 +356,20 @@ def test_per_piece_guard(texto, cantidad, veces, gramos):
     assert any("es el total" in s for s in out.supuestos) == corrected
 
 
+def test_oil_read_as_ml_keeps_the_grams_of_the_text():
+    # The model can read "6g de aceite" as 6 ml, and 6 ml × 0.92 = 5.5 g: the text says 6 g.
+    from macro_translator.models import IngredienteLLM
+    from macro_translator.pipeline import normalizar
+
+    ing = IngredienteLLM.model_validate(
+        ingrediente("Aceite de oliva", "olive oil", 6, "ml", es_aceite=True)
+    )
+    texto = "- 125g mozzarella light hacendado\n- 6g aceite de oliva"
+    out = normalizar(ing, texto)
+    assert out.gramos == pytest.approx(6)
+    assert any("Unidad del texto usada" in a for a in out.avisos)
+
+
 # --------------------------------------------------------------------------- #
 # Assumptions of the choice and the sensitivity warning
 # --------------------------------------------------------------------------- #

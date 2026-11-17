@@ -85,8 +85,13 @@ def normalizar(ing: IngredienteLLM, texto: str = "") -> Ingrediente:
     ing, nota = corregir_veces(ing, texto)
     rec = unidades.reconstruible(ing, texto)
     avisos: list[str] = []
+    correcciones: dict[str, object] = {}
     if rec.cantidad is not None:  # the text fixes the quantity: use it
-        ing = ing.model_copy(update={"cantidad": rec.cantidad})
+        correcciones["cantidad"] = rec.cantidad
+    if rec.unidad is not None:  # ... and its unit ("6g" is grams, not millilitres)
+        correcciones["unidad"] = rec.unidad
+    if correcciones:
+        ing = ing.model_copy(update=correcciones)
     if rec.motivo:
         avisos.append(rec.motivo)
 
